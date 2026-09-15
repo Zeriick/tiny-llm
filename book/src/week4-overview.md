@@ -1,165 +1,139 @@
 # 🚧 Week 4: Build a Coding Agent
 
-> 🚧 **Course status:** The daily chapters are drafts and are not included in
-> the rendered book yet.
+Weeks 1 through 3 ended with a working inference path: render a conversation,
+run the model, and carry its KV cache into later decoding. Week 4 asks what has
+to surround that path before model text can act on a project.
 
-Weeks 1 through 3 turned tokens into text, made decoding efficient, and
-introduced serving techniques. Week 4 adds the next layer: an agent loop that
-lets the model observe a workspace, choose a tool, see the result, and continue
-until a coding task is complete.
-
-The goal is not to reproduce a production coding agent. It is to understand the
-small mechanism underneath one and identify where reliability, efficiency, and
-safety come from. By the end of the week, you will have a local CLI agent powered
-by the inference stack you already built.
-
-## What You Will Build
-
-The finished agent can:
-
-- inspect a repository without loading every file into the prompt;
-- read files in bounded chunks and make exact, reviewable edits;
-- run a narrowly scoped test command and use its output as feedback;
-- continue an interactive conversation and resume it after process exit;
-- reuse compatible KV-cache state instead of prefilling every turn from zero;
-- compact an overlong context while retaining task state;
-- checkpoint and undo its own file mutations;
-- accept steering messages and interrupt long-running work; and
-- solve a small repository task graded by held-out tests.
-
-This is a deliberately small target. Features such as multi-agent delegation,
-remote execution, MCP integrations, and long-term user memory remain extensions
-rather than prerequisites.
-
-## The Core Loop
-
-Every chapter builds on the same loop:
-
-1. Render the task, project instructions, recent events, and tool descriptions.
-2. Decode one structured action using the model and KV cache.
-3. Parse and validate the action before it reaches the operating system.
-4. Run one workspace tool and append its observation to the session.
-5. Repeat until the model returns a final answer or reaches a budget.
-
-The model does not edit files directly. It proposes an action; ordinary code
-decides whether that action is valid and performs it. This boundary makes agent
-behavior easy to inspect and test.
+The product you are building is one bounded coding-agent run:
 
 ```text
-task + session events
-        |
-        v
-  context builder ---> model ---> action validator
-        ^                            |
-        |                            v
-   tool result <--- tool runner <--- validated action
-                         |
-                         v
-                      workspace
+task -> model response -> validated action -> workspace observation
+     -> approved effect -> receipt -> checkpoint -> compacted view
+     -> visible steering -> observable evaluation
+     -> two isolated continuations -> explicit selection
+     -> bounded retrieval of oversized evidence
 ```
 
-## One Targeted Inference Extension
+Each arrow is a harness decision, not a model privilege. The model proposes one
+JSON action. Ordinary Python decides whether the action is well formed,
+enabled, approved, executed, retained, or refused.
 
-The starting model boundary is deliberately stateless:
+## What Is Runnable Today
 
-```python
-Generate = Callable[[list[Message]], str]
-```
+The repository currently ships one **cumulative Day 9 declaration scaffold**.
+All Week 4 modules and exports are visible from Day 1, but later-day
+implementation surfaces remain out of scope until their chapter. Most are
+TODO stubs; Day 9 explicitly supplies one constructor-validation rule. This is
+not nine separately materialized starters.
 
-For every action, `generate_response()` renders the complete conversation,
-creates a fresh cache for each model layer, prefills the entire prompt, decodes
-one response, and releases the caches. That is a useful correctness baseline,
-but an interactive agent repeatedly sends a long prompt whose prefix barely
-changes.
+The deterministic learner checkpoint is cumulative within Week 4:
+`pdm run test --week 4 --day N` force-refreshes the supplied learner tests for
+Days 1 through N, then runs those files together. A later checkpoint therefore
+rechecks every earlier mechanism it builds on.
 
-Day 4 replaces the function with a callable `GenerationSession` that keeps the
-same agent-facing API while owning token IDs and layer caches. It compares the
-new rendered prompt with the cached token sequence, rewinds a divergent suffix,
-and prefills only the new tokens. Days 5 and 6 reuse this operation after
-compaction, steering, and session branching.
+The real-model `pdm run agent` command currently exercises the learner loop,
+workspace, approvals, and receipts from Days 1--3, but its MLX-LM adapter calls
+`mlx_lm.generate` directly. It does **not** exercise the learner-owned
+`generate_response` helper or the Week 1--3 course model/cache path. Day 1 now
+tests that helper directly, and Day 8 reconnects to the course model/cache path
+in a deterministic test and a manual walkthrough. After all nine days are
+complete, `pdm run week4-capstone` composes the deterministic mechanisms in one
+disposable scenario.
 
-The append-only event log remains the source of truth. A process restart may
-always rebuild KV state from events, so persisting K/V to disk is an optional
-optimization rather than a correctness requirement.
+These limits are visible course state, not goals for the learner to repair in
+the prose-only checkpoint.
 
-The course Qwen3-4B context budget is 32,768 total tokens. Day 5 starts
-compaction at 24,576 input tokens and keeps the remaining 8,192 tokens for the
-next response and tool output. This limit follows the model's training range,
-not the amount of unified memory available; the full derivation and long-context
-measurements are in the
-[performance appendix](./appendix-performance.md#long-context-budget-for-week-4).
+## The Nine-Day Progression
 
-## A Small Tool Surface
+| Day | Product pressure | Learner-owned mechanism | Evidence to inspect |
+| --- | --- | --- | --- |
+| [1](week4-01-agent-loop.md) | Model text is not yet a safe next step. | A validated JSON action protocol and bounded loop. | Parsed events, exact observations, and stop reasons. |
+| [2](week4-02-tools.md) | A fake workspace cannot inspect a project. | Contained directory listing and UTF-8 reads. | Listed paths, returned bytes, and recoverable errors. |
+| [3](week4-03-safe-editing.md) | A read-only agent cannot finish a coding task. | Approval, exact edits and commands, and effect receipts. | Changed bytes, validation status, and receipt facts. |
+| [4](week4-04-sessions.md) | A stopped process loses its conversation/model position. | One complete-observation checkpoint and resume boundary. | Saved messages/cache metadata and no effect replay. |
+| [5](week4-05-compaction.md) | Completed evidence consumes prompt space. | Receipt-backed deterministic compaction. | Tokens before/after, saved tokens, and unchanged receipts. |
+| [6](week4-06-steering.md) | An operator needs a visible correction point. | Inspect, append one steering message, and resume. | Public status and message ordering. |
+| [7](week4-07-evaluation.md) | A final sentence is not proof. | A report over declared observable outcomes. | Named file/result/receipt checks. |
+| [8](week4-08-fork-steer-select.md) | Two continuations should not prefill one identical prefix twice. | Dense token/KV-prefix reuse, isolated effects, and explicit selection. | Prefix offsets, avoided logical prefill, branch-local facts, and reports. |
+| [9](week4-09-bound-tool-evidence.md) | A large result should not fill every later prompt. | Content-addressed bytes, bounded previews, and exact range retrieval. | Artifact size/digest, omitted interval, and returned range. |
 
-The target agent uses four tools inspired by small coding-agent harnesses:
+The mechanisms compose in that order. Days 4--9 remain library APIs rather
+than additions to the real-model `agent` CLI. The supplied deterministic
+capstone is the orchestration shell that exercises those completed APIs
+together; it does not replace the mechanisms you implement here.
 
-```text
-read(path, offset?, limit?)
-edit(path, old_text, new_text)
-write(path, content)
-bash(command, timeout?)
-```
+## Prerequisites and Environment
 
-`read` and `edit` are preferable to shell equivalents because they can enforce
-consistent bounds and return structured errors. `bash` supplies repository
-search, file discovery, and test execution without requiring a separate tool for
-every command-line program.
+Complete repository setup and Weeks 1 through 3 first. Day 8 directly uses the
+course tokenizer, model, and dense KV cache. The other deterministic Week 4
+tests use scripted models and temporary workspaces, so they need no model
+download.
 
-A shell working directory is not a security sandbox. During this course, run the
-agent only in a disposable exercise workspace. A production agent would need a
-container, virtual machine, or similarly strong isolation boundary.
+The supported native environment is macOS on Apple Silicon with the project
+dependencies installed. Real-model sections are manual and nondeterministic.
+An uncached run also needs network access, free disk space, and enough unified
+memory for the selected MLX weights. Use only disposable workspaces with no
+secrets: tool observations become model input, and Day 3 can enable file
+changes plus one exact allowlisted command.
 
-The initial demo calls the model through the stateless baseline. The week keeps
-the agent loop, tools, and safety work as its main arc, then uses interactive
-sessions as a focused opportunity to improve the inference framework without
-changing the model kernels.
+## Work Through One Chapter
 
-## Seven-Day Plan
+For Day N:
 
-| Day | Topic | Working milestone |
-| --- | --- | --- |
-| 1 | Agent loop | The model alternates between actions and observations. |
-| 2 | Tools | The agent can read, edit, write, and run a bounded command. |
-| 3 | Safety and validation | Mutations are confined, reviewable, and followed by validation. |
-| 4 | Interactive sessions | Follow-up turns reuse compatible KV state, and durable work survives process exit. |
-| 5 | Compaction | Sessions compact before 24,576 input tokens and reconcile the cache to the new prompt. |
-| 6 | Control and recovery | The user can steer, interrupt, checkpoint, rewind, and undo. |
-| 7 | Evaluation | The agent fixes a small bug and passes held-out tests. |
+1. Read what the final scaffold already declares and which TODO bodies belong
+   to this day. Ignore future modules even though their declarations are
+   visible.
+2. Predict the named action, count, range, or stop reason before running the
+   focused scenario when the chapter asks for one.
+3. Run the cumulative learner checkpoint:
 
-## Run the Starting Demo
+   ```bash
+   pdm run test --week 4 --day N
+   ```
 
-The repository contains a minimal demonstration that uses the reference model
-implementation:
+   For Week 4, this command force-refreshes the learner tests for Days 1
+   through N from the supplied checkpoints, then runs all of them in one
+   pytest invocation. Keep your implementation in `src/`; do not modify a
+   copied test because the next run replaces it.
+4. Implement only the files and relationships named by that chapter.
+5. Rerun the checkpoint and inspect the artifact that can falsify your
+   prediction: events, files, receipts, checkpoints, reports, cache offsets, or
+   artifact bytes.
+6. After Day 9 is green, run the composed product witness:
 
-```bash
-pdm run agent "inspect this project and summarize its files"
-```
+   ```bash
+   pdm run week4-capstone
+   ```
 
-Pass `--solution tiny_llm` to use your implementation, or `--solution mlx` to
-use MLX-LM's optimized executor. The starting program is intentionally smaller
-than the final agent: each day replaces one shortcut with an explicit component
-that can be inspected and tested.
+   Inspect its sorted JSON sections for compaction, both branches, the selected
+   branch, and the externalized artifact range.
 
-Day 4 adds `--interactive` so a completed turn can receive a follow-up without
-starting a new conversation. Run the same scripted interaction through the cold
-and stateful adapters to verify identical output before comparing prefill work.
+Course maintainers can run the corresponding day-local `test-refsol` command
+without copying learner tests. Optional model walkthroughs come after the
+deterministic checkpoint; they are exploration, not correctness evidence.
 
-The default Qwen3 4B model follows the structured action protocol more reliably.
-Use `--model qwen3-0.6b` on memory-constrained machines and expect to spend more
-time on malformed-action recovery.
+## Read the Metrics as Accounting
 
-## Milestones
+Week 4 exposes three kinds of useful counts:
 
-- **Minimal:** the model can inspect a workspace and produce one valid action.
-- **Useful:** the agent can make a precise change and run its test.
-- **Recoverable:** the session can resume, compact, and undo its own changes.
-- **Controllable:** budgets bind and the user can steer or interrupt work.
-- **Efficient:** compatible turns reuse their unchanged prompt prefix.
-- **Measurable:** a repeatable task suite distinguishes progress from anecdotes.
+- Day 5: transcript tokens before and after compaction;
+- Day 8: reused prefix tokens, layer offsets, and avoided-prefill tokens; and
+- Day 9: complete artifact bytes, model-visible bytes, and returned range
+  bytes.
 
-## Further Reading
+These values prove identity and logical-work accounting inside the teaching
+mechanisms. They do not establish wall-clock speedup, throughput, model
+quality, memory-capacity gain, or a universal policy. A manual cached-Qwen run
+may record the model ID, cache state, device, and observed actions, but its
+choices remain nondeterministic and non-comparative.
 
-- [Pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
-- [Benchmarking Coding Agents on Databricks' Multi-Million Line Codebase](https://www.databricks.com/blog/benchmarking-coding-agents-databricks-multi-million-line-codebase)
+## Week Boundary
+
+This is a teaching agent for a trusted operator and disposable local projects.
+It is not a sandbox, hostile-filesystem defense, process jail, durable
+transaction system, distributed scheduler, session tree, hidden grader,
+semantic-perfect memory, network artifact service, or production serving
+framework. Completed effects are never presented as rewound, and a model's
+final prose is never treated as proof by itself.
 
 {{#include copyright.md}}

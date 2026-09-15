@@ -19,13 +19,16 @@ from .week2_kernels import (
 WEEK2_CHECKPOINTS = (
     "kv-cache",
     "quantized-matvec",
-    "decode-attention",
     "rmsnorm",
     "rope",
     "swiglu",
+    "decode-attention",
     "simd-matmul",
     "split-k",
 )
+
+DECODE_ATTENTION_MAX_CONTEXT = 256
+DECODE_ATTENTION_MAX_QUERY = 2
 
 
 def _linear(x: mx.array, weight: mx.array | QuantizedWeights) -> mx.array:
@@ -118,7 +121,12 @@ class Qwen3MultiHeadAttention:
         projection_k, projection_v, _, mask = cache.update_and_fetch(
             projection_k, projection_v, mask_length=L, mask=mask
         )
-        if self.use_decode_attention and L <= 8 and projection_k.shape[-2] <= 256:
+        if (
+            self.use_decode_attention
+            and L <= DECODE_ATTENTION_MAX_QUERY
+            and projection_k.shape[-2] <= DECODE_ATTENTION_MAX_CONTEXT
+            and not isinstance(mask, mx.array)
+        ):
             x = decode_attention_custom(
                 projection_q,
                 projection_k,
@@ -240,7 +248,12 @@ class Qwen3TransformerBlock:
 
 
 class Qwen3ModelWeek2:
-    def __init__(self, mlx_model: Any, checkpoint: str = "split-k"):
+    def __init__(
+        self,
+        mlx_model: Any,
+        checkpoint: str = "split-k",
+        use_mlx_quantized_linear: bool = False,
+    ):
         if checkpoint not in WEEK2_CHECKPOINTS:
             raise ValueError(
                 f"unknown Week 2 checkpoint {checkpoint!r}; "
@@ -274,6 +287,7 @@ class Qwen3ModelWeek2:
                     layer,
                     use_simdgroup_matmul=use_simdgroup_matmul,
                     use_split_k_matmul=use_split_k_matmul,
+                    use_mlx_quantized_linear=use_mlx_quantized_linear,
                 )
             return dequantize_linear(layer).astype(mx.bfloat16)
 
@@ -283,7 +297,6 @@ class Qwen3ModelWeek2:
                 vocab_size=self.vocab_size,
                 embedding_dim=self.hidden_size,
                 weight=embedding_weight,
-                use_custom_kernel=use_simdgroup_matmul,
             )
         else:
             self.embedding = Embedding(

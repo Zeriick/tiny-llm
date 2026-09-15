@@ -1,4 +1,4 @@
-# LLM Serving in a Week
+# Tiny-LLM
 
 [Learn LLM Serving](./preface.md)
 [Setting Up the Environment](./setup.md)
@@ -15,10 +15,11 @@
     - [Sampling and Preparing for Week 2](./week1-07-sampling-prepare.md)
 - [🚧 Week 2: A Step Closer to vLLM](./week2-overview.md)
     - [🚧 KV Cache](./week2-01-kv-cache.md)
-    - [🚧 Benchmark and Profile](./week2-02-benchmarking.md)
-    - [🚧 Quantized Matvec](./week2-03-quantized-matvec.md)
-    - [🚧 Fused Decode Attention](./week2-04-decode-attention.md)
-    - [🚧 Fused Model Kernels](./week2-05-fast-kernels.md)
+    - [🚧 Benchmarking and Profiling](./week2-02-benchmark-profile.md)
+        - [🚧 Optional: Metal Profiling](./week2-advanced-profiling.md)
+    - [🚧 Quantize the Model](./week2-03-quantize-model.md)
+    - [🚧 Fused Model Kernels](./week2-04-fused-model-kernels.md)
+    - [🚧 Fused Decode Attention](./week2-05-decode-attention.md)
     - [🚧 SIMD-Matrix Prefill](./week2-06-simd-matrix-prefill.md)
     - [🚧 Split-K Prefill](./week2-07-split-k-prefill.md)
 - [🚧 Week 3: Build a Mini vLLM](./week3-overview.md)
@@ -27,10 +28,20 @@
     - [🚧 Paged KV Cache](./week3-03-paged-attention-part1.md)
     - [🚧 Direct Paged Attention](./week3-04-paged-attention-part2.md)
     - [🚧 Paged FlashAttention](./week3-05-flash-attention.md)
-    - [🚧 Optional: Speculative Decoding](./week3-optional-speculative-decoding.md)
-    - [Optional: Mixture of Experts](./week3-optional-moe.md)
+    - [🚧 Day 6 (Optional): Mixture of Experts](./week3-optional-moe.md)
+    - [🚧 Day 7 (Optional): Speculative Decoding](./week3-optional-speculative-decoding.md)
 - [🚧 Week 4: Build a Coding Agent](./week4-overview.md)
-- [🚧 Appendix: Performance by Chapter](./appendix-performance.md)
+    - [🚧 Day 1: Validated Agent Loop](./week4-01-agent-loop.md)
+    - [🚧 Day 2: Inspect a Workspace](./week4-02-tools.md)
+    - [🚧 Day 3: Edit, Validate, and Record](./week4-03-safe-editing.md)
+    - [🚧 Day 4: Checkpoint and Resume](./week4-04-sessions.md)
+    - [🚧 Day 5: Compact Completed Work](./week4-05-compaction.md)
+    - [🚧 Day 6: Inspect and Steer a Paused Agent](./week4-06-steering.md)
+    - [🚧 Day 7: Evaluate Observable Outcomes](./week4-07-evaluation.md)
+    - [🚧 Day 8: Fork, Steer, and Select](./week4-08-fork-steer-select.md)
+    - [🚧 Day 9: Bound Tool Evidence](./week4-09-bound-tool-evidence.md)
+- [🚧 Appendix: Performance Evidence Ledger](./appendix-performance.md)
+- [Sponsored by Raft.build](./sponsor.md)
 
 ---
 

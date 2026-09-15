@@ -1,17 +1,15 @@
 import mlx.core as mx
 from mlx_lm.tokenizer_utils import TokenizerWrapper
-from .kv_cache import *
-from .qwen3_week2 import Qwen3ModelWeek2
-from typing import Callable
 from datetime import datetime
+
+from .kv_cache import BatchingKvCache
 
 
 def _step(model, y, offsets, kv_cache):
     logits = model(y, offsets, kv_cache, logits_to_keep=1)
     logits = logits[:, -1, :]
     logprobs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
-    sampler = lambda x: mx.argmax(x, axis=-1)
-    y = sampler(logprobs)
+    y = mx.argmax(logprobs, axis=-1)
     return y
 
 
@@ -25,7 +23,7 @@ class Request:
         prompt_idx: int = 0,
     ):
         self.prompt = prompt
-        self.kv_cache = [TinyKvFullCache() for _ in range(model.num_hidden_layers)]
+        self.kv_cache = model.create_kv_cache()
         self.model = model
         self.detokenizer = tokenizer.detokenizer.__class__(tokenizer._tokenizer)
         self.prefill_tokens = mx.array(
@@ -41,11 +39,14 @@ class Request:
 
     def try_prefill(self):
         """
-        Prefill this request up to max_step size, returns None if prefill is not done
+        Prefill this request's complete remaining prompt on Day 1.
+
+        Week 3 Day 2 Task 1 makes ``prefill_max_step`` an active per-iteration
+        budget and introduces chunked prefill.
         """
         if self.is_prefill_done:
             raise ValueError("prefill called after done")
-        # TODO: in task 4, prefill the full request at once; in task 5, prefill a chunk at a time
+        # TODO: in Day 1 Task 4, prefill the complete remaining prompt at once.
 
     def decode_done(self, token, update_offset=True):
         if self.is_done:

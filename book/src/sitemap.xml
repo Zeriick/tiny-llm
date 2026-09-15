@@ -16,6 +16,9 @@
         <loc>https://skyzh.github.io/tiny-llm/setup</loc>
     </url>
     <url>
+        <loc>https://skyzh.github.io/tiny-llm/sponsor</loc>
+    </url>
+    <url>
         <loc>https://skyzh.github.io/tiny-llm/week1-01-attention</loc>
     </url>
     <url>
@@ -43,22 +46,25 @@
         <loc>https://skyzh.github.io/tiny-llm/week2-01-kv-cache</loc>
     </url>
     <url>
-        <loc>https://skyzh.github.io/tiny-llm/week2-02-benchmarking</loc>
+        <loc>https://skyzh.github.io/tiny-llm/week2-02-benchmark-profile</loc>
     </url>
     <url>
-        <loc>https://skyzh.github.io/tiny-llm/week2-03-quantized-matvec</loc>
+        <loc>https://skyzh.github.io/tiny-llm/week2-03-quantize-model</loc>
     </url>
     <url>
-        <loc>https://skyzh.github.io/tiny-llm/week2-04-decode-attention</loc>
+        <loc>https://skyzh.github.io/tiny-llm/week2-04-fused-model-kernels</loc>
     </url>
     <url>
-        <loc>https://skyzh.github.io/tiny-llm/week2-05-fast-kernels</loc>
+        <loc>https://skyzh.github.io/tiny-llm/week2-05-decode-attention</loc>
     </url>
     <url>
         <loc>https://skyzh.github.io/tiny-llm/week2-06-simd-matrix-prefill</loc>
     </url>
     <url>
         <loc>https://skyzh.github.io/tiny-llm/week2-07-split-k-prefill</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week2-advanced-profiling</loc>
     </url>
     <url>
         <loc>https://skyzh.github.io/tiny-llm/week2-overview</loc>
@@ -86,6 +92,33 @@
     </url>
     <url>
         <loc>https://skyzh.github.io/tiny-llm/week3-overview</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-01-agent-loop</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-02-tools</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-03-safe-editing</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-04-sessions</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-05-compaction</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-06-steering</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-07-evaluation</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-08-fork-steer-select</loc>
+    </url>
+    <url>
+        <loc>https://skyzh.github.io/tiny-llm/week4-09-bound-tool-evidence</loc>
     </url>
     <url>
         <loc>https://skyzh.github.io/tiny-llm/week4-overview</loc>

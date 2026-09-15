@@ -1,120 +1,170 @@
-"""Week 2 Day 5 optimized-kernel tests."""
+"""Week 2 Day 5 decode-attention tests."""
 
-import inspect
-import importlib
+from math import prod
 
 import mlx.core as mx
 import pytest
 
-from tiny_llm_ref.basics import silu
-from tiny_llm_ref.layer_norm import RMSNorm
-from tiny_llm_ref.positional_encoding import RoPE
-from .tiny_llm_base import FastRMSNorm, FastRoPE, Qwen3ModelWeek2, swiglu
-from .utils import assert_allclose, tiny_qwen3_mlx_model
-
-implementation_package = FastRMSNorm.__module__.split(".")[0]
-week2_kernels = importlib.import_module(FastRMSNorm.__module__)
-week1_model = importlib.import_module(f"{implementation_package}.qwen3_week1")
-implementation_norm = importlib.import_module(f"{implementation_package}.layer_norm")
-implementation_rope = importlib.import_module(
-    f"{implementation_package}.positional_encoding"
+from tiny_llm_ref.attention import scaled_dot_product_attention_grouped
+from .tiny_llm_base import (
+    FastRMSNorm,
+    FastRoPE,
+    Qwen3ModelWeek2,
+    decode_attention_custom,
+    scaled_dot_product_attention,
 )
 
-
-def test_week2_fast_operators_are_course_owned():
-    source = inspect.getsource(week2_kernels)
-    assert "mx.fast" not in source
+from .utils import assert_allclose, tiny_qwen3_mlx_model
 
 
-def test_fast_rms_norm_matches_week1_implementation():
-    x = mx.random.normal((2, 3, 16)).astype(mx.bfloat16)
-    weight = mx.random.normal((16,)).astype(mx.bfloat16)
-    expected = RMSNorm(16, weight, eps=1e-5)(x)
-    result = FastRMSNorm(16, weight, eps=1e-5)(x)
-    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
-
-
-@pytest.mark.parametrize("offsets", [3, [3, 7]])
-def test_fast_rope_matches_week1_implementation(offsets):
-    batch_size = 1 if isinstance(offsets, int) else len(offsets)
-    seq_len = 4
-    x = mx.random.normal((batch_size, seq_len, 2, 16)).astype(mx.bfloat16)
-    fast = FastRoPE(16, 32, base=10000)
-    readable = RoPE(16, 32, base=10000)
-    readable_offsets = (
-        slice(offsets, offsets + seq_len)
-        if isinstance(offsets, int)
-        else [slice(offset, offset + seq_len) for offset in offsets]
-    )
-    result = fast(x, offsets)
-    expected = readable(x, readable_offsets)
-    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
-
-
-def test_swiglu_matches_readable_expression():
-    gate = mx.random.normal((2, 4, 16)).astype(mx.bfloat16)
-    up = mx.random.normal((2, 4, 16)).astype(mx.bfloat16)
-    assert_allclose(swiglu(gate, up), silu(gate) * up, mx.bfloat16)
-
-
-def test_completed_model_integrates_all_cumulative_kernels():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="swiglu")
+def test_model_integrates_decode_attention_after_fast_kernels():
+    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="decode-attention")
     layer = model.layers_inner[0]
 
-    assert isinstance(model.norm, FastRMSNorm)
+    assert layer.self_attn.use_decode_attention
     assert isinstance(layer.input_layernorm, FastRMSNorm)
     assert isinstance(layer.self_attn.rope, FastRoPE)
-    assert layer.self_attn.use_decode_attention
     assert layer.mlp.use_fast_swiglu
 
 
-def test_rmsnorm_checkpoint_does_not_enable_later_fast_kernels():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="rmsnorm")
-    layer = model.layers_inner[0]
+def test_model_uses_decode_attention_only_through_measured_context(monkeypatch):
+    module = __import__(Qwen3ModelWeek2.__module__, fromlist=["unused"])
+    readable_attention = module.scaled_dot_product_attention_grouped
+    calls = []
 
-    assert isinstance(model.norm, FastRMSNorm)
-    assert isinstance(layer.input_layernorm, FastRMSNorm)
-    assert type(layer.self_attn.rope) is implementation_rope.RoPE
-    assert layer.self_attn.use_decode_attention
-    assert not layer.mlp.use_fast_swiglu
+    def record_custom(query, key, value, scale, mask):
+        calls.append(("custom", key.shape[-2]))
+        return mx.zeros_like(query)
 
+    def record_readable(query, key, value, scale, mask):
+        calls.append(("readable", key.shape[-2]))
+        return readable_attention(query, key, value, scale, mask)
 
-def test_rope_checkpoint_does_not_enable_swiglu_early():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="rope")
-    layer = model.layers_inner[0]
+    monkeypatch.setattr(module, "decode_attention_custom", record_custom)
+    monkeypatch.setattr(module, "scaled_dot_product_attention_grouped", record_readable)
 
-    assert isinstance(model.norm, FastRMSNorm)
-    assert isinstance(layer.input_layernorm, FastRMSNorm)
-    assert isinstance(layer.self_attn.rope, FastRoPE)
-    assert layer.self_attn.use_decode_attention
-    assert not layer.mlp.use_fast_swiglu
-
-
-def test_week1_keeps_readable_kernels():
-    hidden_size = 16
-    num_heads = 2
-    num_kv_heads = 1
-    head_dim = 8
-    attention = week1_model.Qwen3MultiHeadAttention(
-        hidden_size,
-        num_heads,
-        num_kv_heads,
-        head_dim,
-        mx.zeros((num_heads * head_dim, hidden_size)),
-        mx.zeros((num_kv_heads * head_dim, hidden_size)),
-        mx.zeros((num_kv_heads * head_dim, hidden_size)),
-        mx.zeros((hidden_size, num_heads * head_dim)),
-        mx.ones((head_dim,)),
-        mx.ones((head_dim,)),
+    cases = (
+        (0, 1, "custom", 1),
+        (29, 2, "custom", 31),
+        (126, 2, "custom", 128),
+        (254, 2, "custom", 256),
+        (256, 1, "readable", 257),
+        (253, 3, "readable", 256),
+        (248, 8, "readable", 256),
     )
-    assert type(attention.rope) is implementation_rope.RoPE
-    assert type(attention.q_norm) is implementation_norm.RMSNorm
+    for prefix_length, query_length, expected_path, expected_context in cases:
+        model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="decode-attention")
+        attention = model.layers_inner[0].self_attn
+        cache = model.create_kv_cache()[0]
+        hidden = model.hidden_size
+        if prefix_length:
+            mx.eval(
+                attention(
+                    mx.zeros((1, prefix_length, hidden), dtype=model.precision),
+                    0,
+                    cache,
+                )
+            )
+        calls.clear()
+        mx.eval(
+            attention(
+                mx.zeros((1, query_length, hidden), dtype=model.precision),
+                prefix_length,
+                cache,
+            )
+        )
+        assert calls == [(expected_path, expected_context)]
 
-    mlp = week1_model.Qwen3MLP(
-        hidden_size,
-        hidden_size * 2,
-        mx.zeros((hidden_size * 2, hidden_size)),
-        mx.zeros((hidden_size * 2, hidden_size)),
-        mx.zeros((hidden_size, hidden_size * 2)),
+
+def test_model_keeps_explicit_masks_on_readable_path(monkeypatch):
+    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="decode-attention")
+    attention = model.layers_inner[0].self_attn
+    cache = model.create_kv_cache()[0]
+    module = __import__(Qwen3ModelWeek2.__module__, fromlist=["unused"])
+    readable_attention = module.scaled_dot_product_attention_grouped
+    calls = []
+
+    def reject_custom(*args, **kwargs):
+        pytest.fail("explicit masks must not use the bounded decode kernel")
+
+    def record_readable(query, key, value, scale, mask):
+        calls.append(key.shape[-2])
+        return readable_attention(query, key, value, scale, mask)
+
+    monkeypatch.setattr(module, "decode_attention_custom", reject_custom)
+    monkeypatch.setattr(module, "scaled_dot_product_attention_grouped", record_readable)
+
+    hidden = mx.zeros((1, 1, model.hidden_size), dtype=model.precision)
+    mask = mx.zeros((1, 1, 1, 1), dtype=mx.float32)
+    mx.eval(attention(hidden, 0, cache, mask))
+
+    assert calls == [1]
+
+
+def test_fast_attention_matches_grouped_attention():
+    query = mx.random.normal((2, 4, 3, 16)).astype(mx.bfloat16)
+    key = mx.random.normal((2, 2, 5, 16)).astype(mx.bfloat16)
+    value = mx.random.normal((2, 2, 5, 16)).astype(mx.bfloat16)
+    mask = mx.broadcast_to(
+        mx.array([0, 0, 0, 0, -mx.inf], dtype=mx.bfloat16), (2, 1, 3, 5)
     )
-    assert mlp(mx.ones((1, 1, hidden_size))).shape == (1, 1, hidden_size)
+    scale = 16**-0.5
+    result = scaled_dot_product_attention(query, key, value, scale, mask)
+    expected = scaled_dot_product_attention_grouped(query, key, value, scale, mask)
+    assert result.shape == query.shape
+    assert result.dtype == mx.bfloat16
+    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
+
+
+def test_custom_metal_attention_matches_qwen_boundary_sweep():
+    head_dim = 128
+    query_heads = 4
+    shapes = (
+        *((1, context) for context in (1, 31, 32, 127, 128, 129, 255, 256)),
+        *((8, context) for context in (8, 31, 32, 127, 128, 129, 255, 256)),
+    )
+
+    def fixture(shape, phase):
+        values = mx.sin(
+            mx.arange(prod(shape), dtype=mx.float32) * 0.017 + phase
+        ).reshape(shape)
+        return values.astype(mx.bfloat16)
+
+    for query_length, context_length in shapes:
+        for gqa_ratio in (1, 4):
+            kv_heads = query_heads // gqa_ratio
+            query = fixture((1, query_heads, query_length, head_dim), 0.1)
+            key = fixture((1, kv_heads, context_length, head_dim), 0.7)
+            value = fixture(key.shape, 1.3)
+            explicit_mask = mx.where(
+                mx.arange(context_length) % 5 == 0,
+                mx.array(-2.0, dtype=mx.float32),
+                mx.array(0.0, dtype=mx.float32),
+            ).reshape(1, 1, 1, context_length)
+
+            for mask in ("causal", explicit_mask):
+                result = decode_attention_custom(
+                    query, key, value, head_dim**-0.5, mask
+                )
+                expected = scaled_dot_product_attention_grouped(
+                    query, key, value, head_dim**-0.5, mask
+                )
+                assert result.shape == query.shape
+                assert_allclose(
+                    result,
+                    expected,
+                    mx.bfloat16,
+                    atol=3e-2,
+                    rtol=3e-2,
+                    message=(
+                        f"L={query_length}, S={context_length}, "
+                        f"GQA={gqa_ratio}, mask={type(mask).__name__}"
+                    ),
+                )
+
+
+def test_custom_metal_attention_rejects_unknown_string_mask():
+    query = mx.zeros((1, 4, 1, 128), dtype=mx.bfloat16)
+    key = mx.zeros((1, 1, 1, 128), dtype=mx.bfloat16)
+    with pytest.raises(ValueError, match="unsupported attention mask"):
+        decode_attention_custom(query, key, key, 128**-0.5, "sliding")

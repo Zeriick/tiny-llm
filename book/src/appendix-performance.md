@@ -1,6 +1,8 @@
-# 🚧 Appendix: Performance and Profiling
+# 🚧 Appendix: Performance Evidence Ledger
 
-> 🚧 This appendix is under review and may change.
+> **Status: Experimental, single-machine evidence.** See the
+> [Week 2 verification matrix](./week2-overview.md#verification-status) before
+> treating a correctness, integration, or performance result as broader proof.
 
 This appendix records the measurements that determined the course order. The
 numbers are not additive promises: after one bottleneck shrinks, every other
@@ -13,15 +15,17 @@ alternates their order, performs complete-request warmups, synchronizes lazy
 MLX work inside the timer, and reports the median:
 
 ```bash
-pdm run bench-week2-progression --offline --repeats 3 \
+pdm run bench-week2-progression --offline --repeats 4 --cooldown-seconds 1 \
   --model qwen3-4b --input-len 128 --output-len 129 --warmup 2 \
-  --prefill-logits last --json-output week2-128.json
+  --prefill-logits last \
+  --json-output benchmark_results/task367-final-main/raw/week2-128-final-main.json
 
-pdm run bench-serving-progression --offline --repeats 3 \
+pdm run bench-serving-progression --offline --repeats 4 \
   --model qwen3-4b --num-seqs 16 --batch-size 4 \
   --min-input-len 128 --max-input-len 1024 \
   --min-output-len 32 --max-output-len 128 \
-  --prefill-step 128 --json-output serving-qwen3-4b.json
+  --prefill-step 128 --warmup 1 --cooldown-seconds 1 \
+  --json-output benchmark_results/task367-final-main/raw/week3-serving-final-main.json
 ```
 
 `--prefill-logits last` is a generation-serving workload: both the reference
@@ -46,8 +50,31 @@ default, which is another reminder that benchmark lengths are conventions, not
 universal workloads. Always publish the exact prompt and output lengths.
 
 The measured machine below is an Apple M4 Pro with a 20-core GPU and 64 GB of
-memory. Static Week 2 rows use two complete warmups; the continuous-serving
-rows use one. Both report the median of three fresh alternating processes.
+memory. Static Week 2 rows use two complete warmups and the median of four
+balanced fresh processes; the continuous-serving rows use one warmup and the
+median of four balanced fresh processes.
+
+## Week 2 Checkpoint Retention Ledger
+
+A polished explanation is not evidence that an optimization belongs in the
+course. Before retaining a checkpoint, answer six questions: its invariant,
+why it could be faster, where it wins, where it loses, its fallback, and how the
+benchmark could mislead us. This ledger records the current answers; links
+below contain the measurements.
+
+| Checkpoint | Required invariant | Performance hypothesis | Retained range and losing shapes | Fallback or control | Main benchmark trap |
+|---|---|---|---|---|---|
+| Dense KV cache | Caller offset equals every layer cache length; K/V append on the sequence axis | Reuse projected prefix K/V instead of recomputing the full model prefix | Wins incremental decode as the prefix grows; repeated `concat` still copies `O(S²)` bytes | Week 1 full-prefix model remains the semantic control; Week 3 pages replace growth copies | Comparing cached MLX with an uncached course model measures different algorithms |
+| Packed quantized matvec | W4, group size 128, BF16 parameters, contiguous packed layout, and the declared transpose convention | Read packed weights once and share unpack/scale work across SIMD lanes | Retained for `M <= 8`; multi-row prefill exposes poor reuse and motivates Day 6 | The Python `mlx.core` equation is the correctness oracle; vanilla W4 is an inspectable Metal control; named earlier checkpoints preserve the dense control | Lazy execution or timing post-materialized weights can hide weight traffic |
+| RMSNorm | BF16 I/O with the sum of squares accumulated in FP32 | Fuse reduction, normalization, and weight multiply into one dispatch | Retained at Qwen hidden dimensions after both operator and decode gains; unknown dimensions require remeasurement | Python `mlx.core` RMSNorm and the Day 3 checkpoint remain selectable | Adding isolated microseconds as if checkpoint gains were independent |
+| RoPE | One valid offset per batch row; even rotated dimension; tail values preserved | Fuse angle generation and pair rotation without intermediate graphs | Retained for Qwen decode rows; head-count and rotated-dimension changes require remeasurement | Python `mlx.core` RoPE and the RMSNorm-only checkpoint remain selectable | Benchmarking a cached or precomputed angle path against fresh angle construction |
+| SwiGLU | Gate and up tensors have identical shape and dtype | Fuse SiLU and the gate/up product into one elementwise dispatch | Retained for Qwen MLP shapes; tiny tensors and other dtypes are not a performance claim | The Python `mlx.core` SiLU-product and the RoPE checkpoint remain selectable | Accepting an operator win without a repeated complete-model gain |
+| Decode attention | `Hq % Hkv == 0`, `D <= 256`, FP32 online-softmax state, and causal/explicit mask semantics | Avoid score/probability tensors and merge softmax while walking K/V | Model dispatch is `L <= 2`, `S <= 256`, and no explicit array mask; the context sweep wins 6/6 passes through 256, while the query sweep is repeat-consistent only through `L=2` | Python `mlx.core` grouped attention handles longer queries, longer contexts, and explicit array masks | Fixed implementation order, GPU performance-state drift, extrapolating beyond 256, or treating correctness at `S=1` as schedule efficiency |
+| SIMD-matrix prefill | W4/group-128 layout, BF16 storage, FP32 tile accumulation, and correct partial tiles | Reuse activation and dequantized-weight tiles across prompt rows | Required path for `M > 8`; partial and new model shapes need both correctness and timing sweeps | The Python `mlx.core` matmul is the correctness oracle; Day 3 matvec remains the short-row dispatch and vanilla Metal is a bring-up control | Comparing all-logit course prefill with last-logit MLX serving |
+| Split-K prefill | Partitions align to quantization groups; partial planes are disjoint; final reduction is FP32 | Add independent groups only while the ordinary result grid is under-filled | Helps short narrow Qwen projections, is neutral around the 128-token acceptance shape, and loses once the base grid is occupied | `split_k <= 1` dispatches exactly to the Day 6 unsplit kernel | Profiling independent layers can hide under-occupancy that appears in the dependency-ordered model |
+
+This is a retention ledger, not a portability certificate. A new GPU, MLX
+release, model shape, dtype, or workload reopens the corresponding row.
 
 ## Long-Context Budget for Week 4
 
@@ -152,161 +179,290 @@ does not materially change the result.
 ## Week 2 Performance by Chapter
 
 Week 2 has one fixed acceptance shape: Qwen3-4B, a 128-token prompt, 128 timed
-decode steps, last-row logits, two complete warmups, and the median of three
-alternating fresh processes. The output length is 129 because prefill produces
-the first generated token.
+decode steps, last-row logits, two complete warmups, and the median of four
+fresh processes. Two passes use forward checkpoint order and two use reverse
+order. The output length is 129 because prefill produces the first generated
+token.
 
-Each row is cumulative. Day 2 deliberately retains the Day 1 checkpoint while
-it establishes the synchronized benchmark and profile that choose Day 3.
+Each row is cumulative. Day 2 retains the Day 1 checkpoint while it establishes
+the synchronized benchmark. Day 3 then completes the packed quantized-matvec
+checkpoint.
 
-| Chapter | Cumulative checkpoint | Prefill tok/s | Decode tok/s | Output tok/s | Change selected by the preceding profile |
+| Chapter | Cumulative checkpoint | Prefill tok/s | Decode tok/s | Output tok/s | Change selected by the preceding evidence |
 |---|---|---:|---:|---:|---|
-| Day 1 | Dense request KV cache | 726.25 | 24.51 | 23.89 | Stop full-prefix decode recomputation. |
-| Day 2 | Benchmark and profile | 726.25 | 24.51 | 23.89 | Measure packed projection weight traffic. |
-| Day 3 | Quantized matvec | 104.82 | 59.17 | 38.10 | Keep weights packed and add the x4 decode kernel. |
-| Day 4 | Fused decode attention | 104.51 | 60.23 | 38.50 | Replace growing score/softmax/value work. |
-| Day 5 | Fused model kernels | 106.03 | 77.09 | 44.98 | Remove the newly exposed repeated graph launches. |
-| Day 6 | SIMD-matrix prefill | 793.15 | 76.98 | 70.69 | Fix the quantized matrix path exposed by Day 3. |
-| Day 7 | Split-K prefill | 792.18 | 77.41 | 71.05 | Fill the GPU only for under-occupied short projections. |
-| Baseline | MLX 0.32.0 | 827.74 | 87.58 | 79.81 | External denominator. |
+| Day 1 | Dense request KV cache | 706.65 | 21.73 | 21.25 | Stop full-prefix decode recomputation. |
+| Day 2 | Benchmark baseline | 706.65 | 21.73 | 21.25 | Measure dense projection weight traffic. |
+| Day 3 | Quantized matvec | 104.82 | 55.96 | 36.77 | Keep weights packed and add the x4 decode kernel. |
+| Day 4a | Fast RMSNorm | 104.88 | 63.70 | 39.93 | Remove the first exposed pointwise graph launches. |
+| Day 4b | + Fast RoPE | 105.37 | 66.20 | 40.97 | Fuse position rotation after RMSNorm. |
+| Day 4c | + Fused SwiGLU | 105.84 | 67.83 | 41.65 | Fuse the remaining measured pointwise gap. |
+| Day 5 | Bounded decode attention | 105.90 | 71.18 | 42.89 | Use online softmax only inside the measured guard. |
+| Day 6 | SIMD-matrix prefill | 706.50 | 66.28 | 61.05 | Fix the quantized matrix path exposed by Day 3. |
+| Day 7 | Split-K prefill | 707.41 | 65.83 | 60.67 | Fill the GPU only for under-occupied short projections. |
+| Baseline | Full MLX 0.32.0 | 802.50 | 75.68 | 69.75 | External denominator. |
 
-### The Kernel Profile That Selects Each Chapter
+This final-main ladder exercises the current `L <= 2`, `S <= 256` decode
+attention guard. The Day 5 row is therefore a current cumulative checkpoint,
+not a transferred historical value. Every median recomputes from the raw
+samples in `benchmark_results/task367-final-main/raw/week2-128-final-main.json`.
 
-The reference-solution profile does not replace an operator with an MLX
+### Checked Operator Attribution That Selects Each Chapter
+
+The checked reference-solution attribution does not replace an operator with an MLX
 operator. It calls the projection, attention, pointwise, and cache paths from
 `tiny_llm_ref` at Qwen3-4B shapes and replays each group at the model's real
 dispatch count. The projection replay preserves the transformer dependency
 order so work from a later MLP cannot hide an under-filled attention
-projection. Each category uses
-one synchronization, and the median follows five warmups and fifteen samples:
-
-```bash
-pdm run profile-week2-kernels --model qwen3-4b \
-  --warmup 5 --iterations 15 \
-  --json-output week2-kernel-profile.json
-```
+projection. Each round rotates the category order, synchronizes every category
+once, and the median follows four warmups and twelve samples. This historical
+evidence is checked in for readers; reproducing it is not a learner requirement.
 
 The bar widths below are normalized within a checkpoint. The time at the right
 is the sum of the synchronized category medians, not a throughput measurement.
 Forcing category boundaries prevents some whole-graph fusion, so use the shares
 to rank work and the fresh-process checkpoint table above to accept or reject a
-change. The attributed totals follow the complete-model direction and range
-from 1.01× to 1.28× its phase time.
+change.
 
 ![Week 2 operator attribution by cumulative checkpoint](./week2-kernel-profile.svg)
 
 This is an operator-attribution chart, not a Metal flame graph. It ranks model
-operator families and selects the next kernel to inspect. The Shader Cost Graph
-described in [GPU Profile and CLI Tools](#gpu-profile-and-cli-tools) answers the
-next question: which function and source line inside that kernel is costly.
+operator families and explains why the course tackles the kernels in this order.
 
 The profile makes the progression concrete:
 
-- Cached decode spends 80.3% of attributed time in dense projections. Day 3
+- Cached decode spends 81.5% of attributed time in dense projections. Day 3
   therefore changes weight storage and the decode projection schedule first.
-- After packed matvec, the pointwise group is 39.3% while attention is only
-  5.2% at the 128-token acceptance context. Day 4 is a deliberately scoped
-  online-softmax and context-scaling lesson, not the main short-context gain.
-  Its follow-up profile leaves the 37.4% pointwise group for Day 5.
-- After Day 5, decode clears the course target. Changing the workload to
-  128-token prefill makes the readable quantized projection path 99.0% of
-  attributed time, which selects the cooperative matrix kernel in Day 6.
-- After Day 6, projections remain most of the inherent prefill work, but the
-  long-shape operator comparison is already close to MLX. The 32-token shape
-  sweep then isolates under-occupied Qwen projections and selects Split-K only
-  below their measured crossover.
+- After packed matvec, the pointwise group is 35.8% while attention is only
+  4.5% at the 128-token acceptance context. Day 4 therefore removes the
+  measured normalization, position, and activation overhead first.
+- After the Day 4 pointwise kernels, the balanced operator sweeps isolate a
+  removable attention gap through `S=256` and a repeat-consistent query-length
+  win through `L=2`. Day 5 tests online softmax inside those bounds.
+- At the fixed workload, 128-token prefill remains outside the query-length
+  guard. Its profile makes the vanilla quantized projection path 99.0% of
+  attributed prefill time, which selects the cooperative matrix kernel in Day
+  6; one-token decode uses the bounded Day 5 path.
+- After Day 6, projections remain most of the inherent prefill work. The
+  balanced 32-token sweep isolates under-occupied Qwen projections; the
+  128- and 2,048-row controls show that Split-K becomes neutral once the
+  ordinary result grid is occupied. The remaining 7–11% long-row operator gap
+  belongs to the base tile, not to a larger partition grid.
 
 The checked-in raw profile is
 `benchmark_results/m4-pro-qwen3-4b-week2-kernel-profile-mlx-0.32.0.json`.
+The balanced fresh-process samples are
+`benchmark_results/m4-pro-qwen3-4b-week2-progression-mlx-0.32.0.json`.
+
+The operator tables below use `bench-week2-operators` with twelve warmup rounds
+and sixty measured rounds. Each round synchronizes every implementation, and
+the runner rotates through every execution order so GPU performance-state drift
+does not consistently favor Python reference code, the course kernel, or MLX. These
+latencies are microbenchmarks; only the fresh-process table above accepts an
+end-to-end checkpoint.
 
 ### Day 1: Cache the Prefix
 
 The dense cache makes prefill a one-time cost, but every decode projection
 still reads dense weights. Day 1 therefore starts with respectable prefill and
-only 24.51 decode tok/s. The result gives Day 2 a real cached baseline to
-profile.
+only 21.73 decode tok/s. The result gives Day 2 a real cached baseline to
+measure.
 
 ### Day 2: Measure Before Optimizing
 
-Day 2 changes the measurement discipline rather than the model. Synchronized
-kernel-group timings attribute 80.3% of the cached decode profile to dense
-projections. That evidence selects packed quantized matvec for Day 3; the CLI
-trace workflow remains useful when a compatible Shader Timeline is available.
+Day 2 changes the measurement discipline rather than the model. The end-to-end
+row and synchronized attribution answer different parts of the handoff:
+
+| Evidence | Result | Decision |
+|---|---:|---|
+| Complete-model decode | 21.73 tok/s; full MLX 75.68 tok/s | A large decode gap remains. |
+| Dense projections | 33.66 ms, 81.5% of attributed time | Optimize projection weight traffic first. |
+| Pointwise operators | 6.45 ms, 15.6% | Defer until projections shrink. |
+| Attention | 0.85 ms, 2.1% | Do not select attention from this workload. |
+| KV growth | 0.33 ms, 0.8% | The dense cache already removed prefix recomputation. |
+
+The operator-family result is sufficient to select the quantized-matvec work
+for Day 3. The isolated packed-W4 control is not the Day 2 model's dense
+projection; it remains a readable schedule comparison without pretending that
+one shader ranked the complete model.
 
 ### Day 3: Keep Weights Packed
 
-The x4 W4A16 matvec raises decode from 24.51 to 59.17 tok/s, a 141.4% gain.
-Prefill intentionally falls from 726.25 to 104.82 tok/s because the packed
-checkpoint still sends matrix-shaped inputs through the readable one-thread
-quantized kernel. This is not hidden as a temporary implementation detail: the
-new prefill profile makes quantized matrix multiplication the next dominant
-cost.
+The x4 W4A16 matvec raises complete-model decode from 21.73 to 55.96 tok/s, a
+157.5% gain. Prefill falls from 706.65 to 104.82 tok/s because matrix-shaped
+inputs still use the vanilla Metal quantized kernel. The operator microbenchmark
+checks whether the decode gain came from the intended projection schedule:
 
-### Day 4: Fused Decode Attention
+| Qwen3-4B projection, `M=1` | Vanilla Metal | Packed matvec | MLX |
+|---|---:|---:|---:|
+| Q | 750.3 us | 187.6 us | 183.4 us |
+| K | 239.5 us | 145.1 us | 147.8 us |
+| V | 244.8 us | 147.0 us | 138.9 us |
+| O | 590.3 us | 163.7 us | 160.2 us |
+| MLP gate | 908.8 us | 182.5 us | 177.2 us |
+| MLP up | 948.0 us | 185.6 us | 182.9 us |
+| MLP down | 1,243.3 us | 188.3 us | 181.6 us |
+| Vocabulary head | 11,086.1 us | 1,030.2 us | 1,029.3 us |
 
-At the fixed short context, attention is 5.2% of the attributed Day 3 profile.
-The online-softmax kernel reduces its measured group time from 1.12 to 0.94 ms,
-and complete-model decode rises by only 1.8%. Context sweeps determine its
-retained dispatch range. The small acceptance gain prevents the course from
-incorrectly presenting attention as the main short-context bottleneck.
+The packed operator is close to MLX at every listed shape. Projections still
+occupy 57.9% of the synchronized model replay because every layer inherently
+uses them, but normalization, position, and activation now occupy 35.8% and are
+the larger removable gap. That combination, rather than the absolute height of
+the projection bar, selects Day 4.
 
-### Day 5: Fused Model Kernels
+### Day 4: Fused Model Kernels
 
-Day 5 applies three independently measurable changes. Fast RMSNorm raises
-decode by 11.1%, fast RoPE adds 8.2%, and fused SwiGLU adds another 6.5% at
-their cumulative checkpoints. The pointwise group falls from 37.4% after Day 4
-to 10.7%, and the completed day reaches 77.09 decode tok/s. The course target
-is now met for decode, so the next profile switches to prefill.
+The cumulative model and operator results agree on all three retained changes:
+
+| Checkpoint | Decode tok/s | Python reference | Fused operator | MLX operator |
+|---|---:|---:|---:|---:|
+| Day 3 packed matvec | 55.96 | -- | -- | -- |
+| Fast RMSNorm | 63.70 | 210.0 us | 168.2 us | 147.1 us |
+| Fast RoPE | 66.20 | 180.9 us | 144.8 us | 118.7 us |
+| Fused SwiGLU | 67.83 | 189.4 us | 125.7 us | 137.2 us |
+
+The pointwise group falls from 35.8% after Day 3 to 10.5%. Projections are now
+80.5% of attributed decode time but are already close to their MLX operator
+latencies. A direct dispatch trace can verify that the RMSNorm, RoPE, and
+SwiGLU pipelines all ran. The balanced
+`S=32,128,160,192,256` sweep then isolates an attention opportunity through the
+largest measured context; the query-length sweep supplies the other dispatch
+boundary.
+
+### Day 5: Fused Decode Attention
+
+The matched short-context model checkpoint uses a 32-token prompt and an output
+length of 97. Prefill produces the first token, so all 96 timed decode calls
+grow the cache from `S=33` through `S=128` and enter the custom guard. Under
+that workload, fused attention raises median decode from 59.90 to 61.78 tok/s
+(+3.1%) and output throughput from 48.52 to 49.54 tok/s (+2.1%). MLX reaches
+68.86 decode tok/s, so the bounded checkpoint reaches 89.7% of that matched
+denominator. The raw samples are checked in at
+`benchmark_results/m4-pro-qwen3-4b-week2-short-context-mlx-0.32.0.json`.
+
+The current context sweep includes the FP32 promotion and output cast used by
+the Python `mlx.core` fallback. It uses six forward/reverse context passes, rotates
+every implementation order, and retains 60 samples per implementation and
+pass:
+
+| Cached context | Python reference | Fused | MLX | Fused vs Python | Pass wins |
+|---:|---:|---:|---:|---:|---:|
+| 32 | 143.0 us | 125.7 us | 116.3 us | 1.138x | 6/6 |
+| 128 | 149.3 us | 136.3 us | 120.6 us | 1.095x | 6/6 |
+| 160 | 151.2 us | 140.1 us | 120.9 us | 1.079x | 6/6 |
+| 192 | 154.0 us | 143.9 us | 121.9 us | 1.071x | 6/6 |
+| 256 | 158.0 us | 150.7 us | 122.8 us | 1.048x | 6/6 |
+
+The query-length sweep holds `S=128`, Qwen3-4B's 4:1 GQA ratio, and the causal
+form while balancing L1/L2/L4/L8 order over six passes:
+
+| Query length | Python reference | Fused | MLX | Fused vs Python | Pass wins |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 244.4 us | 213.1 us | 155.9 us | 1.147x | 6/6 |
+| 2 | 341.4 us | 258.8 us | 185.3 us | 1.319x | 6/6 |
+| 4 | 322.7 us | 297.3 us | 197.4 us | 1.085x | 4/6 |
+| 8 | 377.7 us | 491.5 us | 290.6 us | 0.768x | 0/6 |
+
+At `L=1`, the causal mask permits the entire existing cache and is equivalent
+to unmasked one-token decode; longer rows measure causal multi-token chunks.
+The context sweep supports `S <= 256`, while `L=2` is the largest
+repeat-consistent query-length win. Those results define the current
+`L <= 2`, `S <= 256` guard. The checked raw records are
+`benchmark_results/m4-pro-qwen3-4b-week2-attention-context-sweep-mlx-0.32.0.json`
+and
+`benchmark_results/m4-pro-qwen3-4b-week2-attention-query-sweep-mlx-0.32.0.json`.
+
+At the fixed 128/129 acceptance workload, the current cumulative Day 5 row
+raises decode from 67.83 to 71.18 tok/s and output throughput from 41.65 to
+42.89 tok/s. Full MLX reaches 75.68 decode tok/s, so this checkpoint reaches
+94.1% of that matched denominator. The short-context experiment above remains
+the causal guard evidence; the final-main ladder is the representative
+absolute checkpoint.
+
+In the fixed 128-token workload, prefill remains outside the query-length guard
+and attributes 1,196.34 ms of 1,208.78 ms, or 99.0%, to quantized projections;
+attention accounts for 6.08 ms and the pointwise group for 6.35 ms. That
+prefill bottleneck selects the matrix-shaped projection kernel in Day 6.
 
 ### Day 6: Use Cooperative Loads for Quantized Prefill
 
-At the Day 5 prefill checkpoint, projections in the reference solution account
-for 1,259.90 ms of the 1,272.06 ms attributed profile, or 99.0%. Attention
-accounts for 5.94 ms, and normalization, position, and activation together
-account for 6.21 ms.
-This direct profile selects quantized matrix multiplication without routing any
-model operation through MLX's quantized-matmul implementation.
+At the fixed-workload prefill checkpoint, quantized projections account for 1,196.34 ms
+of the 1,208.78 ms attributed profile, or 99.0%. The cooperative matrix
+schedule replaces the vanilla multi-row path and raises complete-model prefill
+from 105.90 to 706.50 tok/s. Full MLX reaches 802.50 tok/s. The required
+solution owns `CooperativeTileLoader` and `CooperativeBlockMMA` directly over
+Metal `simdgroup_matrix`; it does not import Steel.
 
-Assign contiguous activation elements to adjacent lanes and stage them with
-aligned cooperative block loads. Combined with a 32×32×32 tile, this schedule
-makes the large Qwen3-4B projections essentially match MLX:
+The long-row control shows that Split-K has no remaining occupancy problem to
+solve once the result grid is full. It does not show parity with MLX:
 
-| Projection at `M=2048` | Reference solution | MLX |
+| Projection at `M=2,048` | Day 6 SIMD | Full MLX |
 |---|---:|---:|
-| Q, `2560 -> 4096` | 6.66 ms | 6.72 ms |
-| K, `2560 -> 1024` | 1.84 ms | 1.85 ms |
-| MLP gate, `2560 -> 9728` | 15.49 ms | 15.65 ms |
-| MLP down, `9728 -> 2560` | 15.66 ms | 15.76 ms |
+| Q | 7,329.5 us | 6,872.2 us |
+| K | 2,060.1 us | 1,902.7 us |
+| V | 2,059.7 us | 1,903.0 us |
+| O | 7,634.7 us | 6,906.9 us |
+| MLP gate | 18,038.4 us | 16,889.7 us |
+| MLP up | 18,593.4 us | 16,894.9 us |
+| MLP down | 19,384.4 us | 17,421.1 us |
 
-The cooperative schedule raises prefill from 106.03 to 793.15 tok/s, a 648.0%
-gain, while leaving vector decode unchanged.
+The SIMD latency is roughly 7–11% above MLX at the major long-row shapes. At
+the 128-token acceptance shape it is roughly 5–10% above MLX, while the short
+row exposes an under-filled grid:
+
+| Projection at `M=32` | Day 6 SIMD | Split-K | Full MLX |
+|---|---:|---:|---:|
+| Q | 566.1 us | 513.1 us | 506.0 us |
+| K | 270.9 us | 258.1 us | 235.7 us |
+| V | 243.1 us | 191.4 us | 191.7 us |
+| O | 287.5 us | 275.7 us | 261.3 us |
+| MLP gate | 443.8 us | 448.2 us | 417.5 us |
+| MLP up | 446.3 us | 443.0 us | 416.0 us |
+| MLP down | 493.8 us | 448.5 us | 417.9 us |
+
+The operator gaps correlate with result-grid size rather than reduction width
+or arithmetic. For the narrow K projection, the unsplit launch geometry is:
+
+| Prompt rows | Row tiles | Output tiles | Independent threadgroups |
+|---:|---:|---:|---:|
+| 32 | 1 | 32 | 32 |
+| 128 | 4 | 32 | 128 |
+| 2,048 | 64 | 32 | 2,048 |
+
+The dispatch formula yields 32 independent threadgroups for the first row of
+this table. The long control rejects extra reduction partitions at an occupied
+grid; it does not erase the base-tile gap. The short table and calculated
+geometry select a bounded Split-K experiment for Day 7.
 
 ### Day 7: Split K Only Below the Crossover
 
-The Day 6 shape sweep finds under-filled result grids at short `M`. Day 7
-splits K until the result grid approaches 320 threadgroups, using at most 16
-equal, 128-aligned partitions. The narrow K/V projections receive the largest
-split; Q, O, and MLP down may also split at `M=32`, while the wide gate/up grid
-is already occupied. At the 32-token control point:
+The two balanced context positions are the causal guard at `M=32`. Split-K
+improves K by 29.2%/14.9%, V by 23.6%/11.3%, O by 3.9%/4.9%, and down by
+11.1%/8.8%. Gate/up are neutral, and Q reverses direction (-4.5%, +1.5%), so
+the pooled Q median is not a categorical win.
+
+The complete 32-token model confirms that the useful projection changes survive
+composition:
 
 | Checkpoint | Prefill tok/s | Decode tok/s | Prefill / MLX |
 |---|---:|---:|---:|
-| Day 6 cooperative matmul | 586.12 | 78.03 | 83.3% |
-| Day 7 split-K | 650.69 | 77.89 | 92.5% |
-| MLX 0.32.0 | 703.58 | 84.69 | 100% |
+| Day 6 cooperative matmul | 537.92 | 67.97 | 76.6% |
+| Day 7 split-K | 599.81 | 67.62 | 85.4% |
+| Full MLX 0.32.0 | 702.61 | 77.11 | 100% |
 
-Split-K adds 11.0% prefill at this short shape and no decode gain. At the
-128-token acceptance shape only the narrow K/V projections retain a two-way
-split; the other major projections fall back to Day 6, and the complete-model
-result remains neutral. At 2,048 tokens every projection falls back.
+Split-K adds 11.5% complete-model prefill at this short shape. At `M=128`, the
+operator changes are small or mixed and the fresh-process result is neutral:
+706.50 versus 707.41 prefill tok/s. At `M=2,048`, every projection uses the
+unsplit policy and complete-model prefill is 551.48 versus 547.73 tok/s. The
+direct dispatch trace must show the accumulation and merge pipelines, while
+the calculated policy supplies the partition count and the shape sweep decides
+where those costs are worthwhile.
 
-The fresh-process samples for this control point are checked in at
-`benchmark_results/m4-pro-qwen3-4b-week2-32-mlx-0.32.0.json`.
-
-The completed Week 2 path reaches 95.7% of MLX prefill, 88.4% of MLX decode,
-and 89.0% of MLX end-to-end output throughput. All three exceed the 80% course
-target. Longer static sweeps remain useful attention diagnostics, but they do
-not test the memory-management reasons for paging.
+The completed Week 2 path reaches 88.2% of full-MLX prefill, 87.0% of full-MLX
+decode, and 87.0% of full-MLX output throughput at the fixed 128/129 acceptance
+shape. Both required phase ratios exceed 80% there. The same claim is not made
+at 2K or 8K, on another model, or on another GPU. Exact raw samples, process
+order, and drift controls are in
+`benchmark_results/task367-final-main/task367-final-main-benchmark-ledger.md`.
 
 ## Week 3 Performance by Chapter
 
@@ -316,70 +472,161 @@ serving workload with request turnover, incremental unknown-size growth,
 chunked admission, dense batch reconstruction, and page reuse:
 
 ```bash
-pdm run bench-serving-progression --offline --repeats 3 \
+pdm run bench-serving-progression --offline --repeats 4 \
   --model qwen3-4b --num-seqs 16 --batch-size 4 \
   --min-input-len 128 --max-input-len 1024 \
   --min-output-len 32 --max-output-len 128 \
-  --prefill-step 128 --warmup 1 \
-  --json-output serving-qwen3-4b.json
+  --prefill-step 128 --warmup 1 --cooldown-seconds 1 \
+  --json-output benchmark_results/task367-final-main/raw/week3-serving-final-main.json
 ```
 
 A complete warmup compiles the kernels. The runner then synchronizes and resets
 every page pool, so the measured paged run starts with zero pages and zero
 backing capacity.
 
+### Ownership and denominators
+
+The projection boundary must be fixed before interpreting any Week 3 table:
+
+| Evidence row | Projections | Cache / attention / paging / scheduler | What it establishes |
+|---|---|---|---|
+| Week 2 SIMD or Split-K | Course-owned zero-Steel W4 kernels, loader, and direct SIMD-matrix helper | Course-owned Week 2 dense cache and operators | Week 2 course implementation versus its explicitly paired full-MLX row. |
+| Week 3 course row | Explicit MLX quantized-projection seam | Course-owned cache, attention, paging, batching, and scheduling | Representative cumulative Week 3 behavior; it does not isolate the seam. |
+| Full `mlx` row | Full MLX model/operator | Full MLX | External denominator, distinct from the hybrid Week 3 course row. |
+| Task #360 seam versus inherited | MLX quantized projections versus inherited Week 2 course projections | Identical course-owned Week 3 mechanisms | Causal projection-seam effect on one measured source tree. |
+
+Task #360 and task #367 answer different questions. The former is a causal
+ablation; the latter is representative final-main absolute evidence. Do not
+splice one campaign's absolute values into the other or credit its projection
+gain to paging, FlashAttention, or scheduling.
+
+The Days 1–2 chunk-size control uses one deterministic Qwen3-0.6B trace with
+seed 0, eight 64–512-token prompts, a fixed 32-token output budget, and four
+balanced fresh processes. A gap is measured between synchronized decode-call
+completions only while a decode request is active. Every row uses the same
+Week 3 projection seam and course-owned mechanisms; only the budget changes:
+
+| Prefill budget | Output tok/s | Prefill tok/s | Decode tok/s | Requests/s | Decode step p95 | Decode gap p95 / max |
+|---:|---:|---:|---:|---:|---:|---:|
+| 32 | 105.23 | 2,549.62 | 181.77 | 3.288 | 15.82 ms | 30.01 / 52.62 ms |
+| 128 | 153.82 | 4,215.12 | 242.23 | 4.807 | 17.79 ms | 45.36 / 53.76 ms |
+| 512 | 170.46 | 4,769.14 | 262.01 | 5.327 | 17.11 ms | 73.56 / 119.90 ms |
+
+Because 512 covers every prompt in this trace, that row is the full-prompt Day
+1 control. Relative to it, 128 gives up 9.8% output throughput while reducing
+the p95 completion gap by 38.3% and the maximum by 55.2%. The course chooses
+128 for this trace, not as a universal chunk-size threshold.
+
+The Day 4 operator control uses `B=1`, `Hq=32`, `Hkv=8`, `L=1`, `D=128`, BF16,
+and 128-token pages. Each row is the median of four balanced fresh-process
+medians, each containing 60 synchronized calls after five warmups:
+
+| Context | Dense + gather | Direct paged | MLX fused |
+|---:|---:|---:|---:|
+| 128 | 201.26 us | 228.58 us | 188.79 us |
+| 1,024 | 468.39 us | 299.14 us | 250.04 us |
+
+The direct operator is 13.6% slower than dense-plus-gather at 128 tokens and
+36.1% faster at 1,024 tokens. MLX remains faster at both shapes. Outputs match
+the dense BF16 equation within 0.00439453125 and 0.001953125 respectively.
+This operator contains no model projection and therefore isolates the
+attention paths directly.
+
 | Chapter | Measured checkpoint | Primary result | Change from the preceding comparable path |
 |---|---|---|---|
 | Day 1 | Continuous scheduler | Defines request turnover and active-batch throughput. | Establishes the serving workload. |
-| Day 2 | Chunked admission with dense reconstruction | 653.24 prefill; 32.77 output; 53.99 decode tok/s | Establishes the dense serving baseline. |
-| Day 3 | Paged storage with compatibility gather | 662.69 prefill; 38.38 output; 71.02 decode tok/s | +17.1% output; +31.5% decode; -50.6% copy volume. |
-| Day 4 | Direct paged decode schedule | 100.35 aggregate decode tok/s | +41.3% decode over the compatibility gather path. |
-| Day 5 | Complete direct paged path | 650.10 prefill; 45.05 output; 100.35 decode tok/s | +37.4% output and request throughput over dense serving. |
+| Day 2 | Chunked admission with dense reconstruction | 711.18 prefill; 35.23 output; 57.59 decode tok/s | Establishes the dense serving baseline. |
+| Day 3 | Paged storage with compatibility gather | 725.46 prefill; 41.64 output; 78.53 decode tok/s | +18.2% output; +36.4% decode; -50.6% copy volume. |
+| Day 4 | Correct direct paged behavior | 105.01 aggregate decode tok/s in the cumulative endpoint | Removes dense K/V reconstruction; this corpus does not isolate Day 4's scalar prefill. |
+| Day 5 | BF16 long-prefill tiled schedule | No isolated scalar-versus-tiled row | The cumulative serving row below includes Day 5 but is not causal evidence for it. |
 
 Day 1 introduces scheduling, not a kernel speedup. Day 2 makes the hidden cost
 measurable: appending one token still reconstructs a padded dense batch. Day 3
 makes pages canonical but retains `gather_dense()` as a compatibility
-checkpoint. Days 4 and 5 then remove that compatibility movement for decode
-and long-query prefill respectively.
+checkpoint. Day 4 then removes that compatibility movement for every query
+shape. Day 5 changes only the internal schedule for supported BF16 long
+prefill.
 
 Days 4 and 5 share the final direct-paged process: queries with `L <= 8`
-dispatch to the Day 4 decode schedule, while longer chunks dispatch to the Day
-5 tiled schedule. The phase timers report their decode and prefill throughput
-inside the same request trace; they are not results from different workloads.
+dispatch to the Day 4 decode schedule, supported BF16 long-prefill calls use
+the Day 5 tiled schedule, and generic shapes retain a direct scalar fallback.
+The phase timers report decode and prefill throughput inside the same request
+trace; they do not isolate the Day 5 schedule.
 
 Every headline number above comes from the same continuous-batch campaign. The
 cumulative serving endpoints are:
 
 | Storage and attention path | Prefill tok/s | Output tok/s | Decode tok/s | Requests/s | Peak KV MiB | Avoidable KV copy MiB |
 |---|---:|---:|---:|---:|---:|---:|
-| Dense growth and reconstruction | 653.24 | 32.77 | 53.99 | 0.437 | 1,096 | 209,532 |
-| Paged storage plus dense gather | 662.69 | 38.38 | 71.02 | 0.511 | — | 103,445 |
-| Direct paged attention | 650.10 | 45.05 | 100.35 | 0.600 | 576 | 504 |
+| Dense growth and reconstruction | 711.18 | 35.23 | 57.59 | 0.469 | 1,096 | 209,532 |
+| Paged storage plus dense gather | 725.46 | 41.64 | 78.53 | 0.555 | not a total peak | 103,445 |
+| Direct paged attention | 672.68 | 46.36 | 105.01 | 0.618 | 576 | 504 |
+
+The same raw serving artifact reports synchronized decode-call latency and the
+completion gaps that include intervening prefill and scheduler work:
+
+| Path | Decode step median / p95 / max | Completion gap median / p95 / max |
+|---|---:|---:|
+| Dense reconstruction | 51.03 / 84.49 / 124.52 ms | 53.16 / 248.30 / 309.74 ms |
+| Paged + gather | 39.80 / 52.79 / 80.09 ms | 41.82 / 225.64 / 261.38 ms |
+| Direct paged | 28.97 / 36.78 / 63.04 ms | 30.16 / 222.18 / 239.49 ms |
 
 The compatibility row omits peak storage because an exact peak must include
 both the page pool and temporary dense staging allocation. Its other counters
 remain directly comparable.
 
-Direct paged attention improves output and request throughput by 37.4%,
-aggregate decode by 85.9%, and peak KV storage by 47.4% relative to dense
-serving. Avoidable logical copy volume falls by 99.8%. Relative to paged
-storage plus gather, the direct operator adds 17.4% output throughput, 41.3%
-decode throughput, and removes 99.5% of the remaining copy volume. Prefill is
-0.5% below dense and 1.9% below gather at the 128-token serving chunk, so the
-chapter does not claim a short-chunk FlashAttention speedup.
+Direct paged attention is 5.4% lower on prefill, 31.6% higher on output/request
+throughput, 82.3% higher on decode, and 47.4% lower on measured peak KV storage
+relative to dense serving. Avoidable logical copy volume falls by 99.76%.
+Relative to paged storage plus gather, it is 7.3% lower on prefill, 11.3%
+higher on output/request throughput, 33.7% higher on decode, and removes 99.51%
+of the remaining copy volume. These cumulative system results do not isolate
+the Day 5 prefill kernel or prove a short-chunk FlashAttention win.
 
 The 8K static run remains a secondary kernel diagnostic, not a Week 3 headline
-or acceptance result. At that shape, paged FlashAttention raises prefill from
-384.88 to 427.01 tok/s. MLX reaches 568.74 tok/s, so the page-aware path in the
-reference solution reaches 75.1%. This explains where query tiling begins to
-help without mixing a static denominator into the serving progression.
-One-token decode continues to dispatch to the Day 4 vector schedule.
+or acceptance result. At that shape, the Week 3 seam plus course paged path
+raises prefill from the Week 2 path's 323.96 to 463.69 tok/s, a 43.1% gain, and
+reaches 72.5% of the 639.73 tok/s full-MLX row. This does not isolate the
+projection seam, measure request turnover or admission capacity, or establish
+long-context support. One-token decode continues to dispatch to the Day 4
+vector schedule.
 
-The checked-in result
-`benchmark_results/m4-pro-qwen3-4b-mlx-0.32.0.json` contains the published
-acceptance and direct-serving samples, medians, configurations, and host
-metadata. Chapter checkpoint rows use the same fresh-process runner and
-hardware.
+### Separate causal projection-seam result
+
+Task #360 holds the Week 3 mechanisms fixed and changes only projection
+ownership on measured source `170211be3503c0ec0b1fa75bbb3b0c23a86bd3ac`:
+
+| Causal comparison | MLX seam effect versus inherited Week 2 projections |
+|---|---:|
+| Chunked prefill, step 512 | +10.64% prefill; +11.91% output |
+| Chunked prefill, step 128 | +11.74% prefill; +11.76% output |
+| Dense Day 3 | +12.17% prefill; +16.82% output; +18.86% decode |
+| Serving | +7.72% prefill; +9.42% output; +13.02% decode |
+
+Full MLX remains 17.83% faster than the dense Day 3 seam on prefill
+(equivalently, the seam is 15.13% below full MLX), because the seam changes
+projections only. These causal percentages explain the ownership decision;
+the task #367 tables above provide current absolute values.
+
+The checked-in final-main corpus contains the complete raw samples, exact
+source commit and tracked-clean flag, host, configuration, execution order,
+and—where requests are generated—the exact request trace and its checksum:
+
+- `benchmark_results/task367-final-main/raw/week2-32-final-main.json`
+- `benchmark_results/task367-final-main/raw/week2-128-final-main.json`
+- `benchmark_results/task367-final-main/raw/week2-2048-final-main.json`
+- `benchmark_results/task367-final-main/raw/week2-prefill-operators-final-main.json`
+- `benchmark_results/task367-final-main/raw/week3-chunked-prefill-final-main.json`
+- `benchmark_results/task367-final-main/raw/week3-attention-final-main.json`
+- `benchmark_results/task367-final-main/raw/week3-serving-final-main.json`
+- `benchmark_results/task367-final-main/raw/week3-8k-final-main.json`
+
+Verify the manifest, all eight raw files, and the evidence ledger with:
+
+```bash
+(cd benchmark_results/task367-final-main && \
+  shasum -a 256 -c task367-final-main-sha256.txt)
+```
 
 Copy counters report logical operation volume, not hardware DRAM traffic.
 Dense volume includes old K/V copied during each request-cache growth and live
@@ -388,89 +635,39 @@ includes old physical pages copied only when a layer's geometric pool grows.
 Appending a token writes only its page slice, and later requests reuse freed
 pages.
 
-The direct-paged median reaches 1,116 live pages out of 1,152 reserved pages,
-reuses 2,196 page allocations, and records 15,840 unused tail slots across
-layer caches. It grows the layer pools 144 times because the measured run
-starts empty. These counters make reuse and fragmentation visible; static
-single-request latency cannot.
+The raw counters make reuse, fragmentation, logical copy volume, and measured
+KV headroom visible; static single-request latency cannot. Logical copy volume
+is not hardware DRAM traffic, and none of these counters establishes admission
+capacity without a memory-capped sweep.
 
 The workload validates continuous batching, chunked prefill, incremental
 growth, and page reuse. Prefix sharing and speculative decoding require
 separate traces with shared prefixes or cache rewind events and are not claimed
 by this result.
 
-## GPU Profile and CLI Tools
+## Week 2 Profiling Boundary
 
-Two profiles are useful at different levels. The synchronized
-reference-solution attribution ranks operator families without a GUI:
-
-```bash
-pdm run profile-week2-kernels --model qwen3-4b \
-  --warmup 5 --iterations 15
-```
-
-After it selects an operator family, capture one source-enabled shader at the
-same Qwen3-4B shape:
-
-```bash
-CMAKE_ARGS="-DMLX_METAL_DEBUG=ON" pdm run build-ext-ref
-
-MTL_CAPTURE_ENABLED=1 pdm run capture-week2-shader \
-  --projection q --rows 1 \
-  --output /tmp/week2-q-projection.gputrace
-```
-
-Open the trace in Xcode and profile the selected compute pipeline. Pipeline
-Statistics reports shader GPU time and time spent in ALU, memory, control flow,
-and synchronization. On M3 and newer Macs, the Shader Cost Graph is a true
-function-call flame graph with weighted source lines, executed-instruction
-counts, divergence, and instruction categories. The checked-in chart above
-does not substitute for either view.
-
-`xcrun xctrace` is available from the command line:
-
-```bash
-xcrun xctrace list templates
-
-xcrun xctrace record \
-  --template "Metal System Trace" \
-  --output /tmp/tiny-llm-decode.trace \
-  --launch -- pdm run bench --solution tiny_llm_ref --loader week3 \
-    --model qwen3-4b --num-seqs 1 \
-    --min-input-len 2048 --max-input-len 2048 \
-    --min-output-len 33 --max-output-len 33 --warmup 1 \
-    --prefill-logits last
-
-xcrun xctrace export --input /tmp/tiny-llm-decode.trace --toc
-```
-
-On the measured M4 Pro with Xcode 26.6, the CLI trace resolves the exact
-reference-solution pipelines, including
-`quantized_matvec_x4_fast_w4a16_g128_bf16`,
-`week2_decode_attention_bf16`, `week2_rms_norm_bf16`,
-`week2_swiglu_bf16`, and `week2_rope_bf16`. The selected Metal GPU counter
-profile is unsupported on this configuration, so the exported shader-sample
-and counter tables contain no rows. This result identifies the functions but
-does not establish an ALU or memory limiter. Use the `.gputrace` replay in
-Xcode for Pipeline Statistics and per-line Shader Cost Graph data. Never infer
-ALU or bandwidth saturation from an unavailable counter, and do not use trace
-wall time as a throughput result.
+The balanced JSON tables and SVG above are the checked-in evidence for the
+current course. Learners are not required to generate Metal captures, Xcode
+visualizations, `gpudebug` reports, profiling microbenchmarks, or screenshots.
+The full profiling workflow will return when the macOS 27 tooling is available;
+until then, matched synchronized benchmarks are the acceptance evidence.
 
 ## Optimization Map
 
 | Measured bottleneck | Retained change | Chapter |
 |---|---|---|
 | Full-prefix decode recomputation | Dense request KV cache | Week 2 Day 1 |
-| Quantized projection weight traffic | Packed W4A16 x4 SIMD matvec | Week 2 Day 3 |
-| Growing short-context attention | Online-softmax decode kernel | Week 2 Day 4 |
-| Repeated small graph dispatches | RMSNorm, RoPE, SwiGLU kernels | Week 2 Day 5 |
+| Dense projection weight traffic | Packed W4A16 x4 SIMD matvec | Week 2 Day 3 |
+| Repeated small graph dispatches | RMSNorm, RoPE, SwiGLU kernels | Week 2 Day 4 |
+| Growing short-context attention | Online-softmax decode kernel | Week 2 Day 5 |
 | Scalar/strided prefill projection loads | Cooperative 32×32×32 quantized matmul | Week 2 Day 6 |
 | Under-filled short-prefill result grid | Measured split-K dispatch | Week 2 Day 7 |
 | Functional whole-cache page updates | Aliasing page-slice write primitive | Week 3 Day 3 |
 | Scalar paged final reduction | Compact D=128 SIMD reduction | Week 3 Day 4 |
 | Scalar contiguous-page K/V tile loads | Cooperative paged FlashAttention loads | Week 3 Day 5 |
 
-This is the course progression: optimize one measured cost, benchmark and
-profile again, then let the new profile choose the next chapter.
+This is the course progression: optimize one measured cost, benchmark again,
+then let the evidence choose the next chapter.
 
 {{#include copyright.md}}

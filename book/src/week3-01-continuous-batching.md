@@ -1,14 +1,26 @@
 # 🚧 Week 3 Day 1: Continuous Batching
 
-> 🚧 This chapter is under review and may change.
+You begin with the completed Week 2 single-request model: multi-offset RoPE and
+causal masking already have stable interfaces, and each request can own a dense
+KV cache. The Day 1 starter leaves four learner-owned slices behind those
+interfaces:
 
-In this chapter, we will implement **continuous batching**, which keeps a batch
-of active requests on the device and replaces each request as soon as it
-finishes.
+- dense batch assembly and masking in `BatchingKvCache`;
+- `mlx_quantized_linear` plus the per-weight selector and the explicit
+  `dispatch_week3_batch_model` factory;
+- selector propagation through `Qwen3ModelWeek2`; and
+- `Request.try_prefill` plus the request-admission/decode loop in
+  `batch_generate`.
 
-So far, each generation loop has processed only one request. That may not provide
-enough work to use the device efficiently, so we will decode several requests
-in each model call.
+Complete and test those slices in order. The resulting **continuous batch**
+keeps several active requests on the device and replaces each request as soon
+as it finishes. Only quantized projections cross the Week 3 MLX seam;
+normalization, activation, RoPE, cache state, attention, and scheduling remain
+course-owned.
+
+So far, each generation loop has processed only one request. That may not
+provide enough work to use the device efficiently, so Day 1 decodes several
+requests in each model call.
 
 A static batch could select five prompts and run them together until every
 request finishes. However, generated sequences have different lengths. If four
@@ -41,7 +53,7 @@ policy easy to inspect and exposes an important limitation: one long prefill
 can delay every active request's next decode step. Day 2 will add a bounded
 prefill budget to solve that fairness problem.
 
-## Task 1: Verify the Week 2 Batch Contract
+## Task 1: Reuse RoPE and Causal Masking for Batched Requests
 
 ```
 src/tiny_llm/week2_kernels.py::FastRoPE  (reuse unchanged)
@@ -53,7 +65,7 @@ mask whose query and source lengths may differ. Verify those two Week 2
 interfaces before adding the scheduler so the serving layer can use one model
 contract for every request position.
 
-Verify multi-offset RoPE and both attention paths with:
+Verify multi-offset RoPE and the rectangular causal mask with:
 
 ```bash
 pdm run test --week 3 --day 1 -- -k task_1
@@ -95,18 +107,34 @@ You can verify your solution by running:
 pdm run test --week 3 --day 1 -- -k task_2
 ```
 
-## Task 3: Exercise the Batch-Ready Model
+## Task 3: Add the Week 3 Projection Seam
 
 ```
-src/tiny_llm/qwen3_week2.py  (reuse unchanged)
+src/tiny_llm/quantize.py::mlx_quantized_linear
+src/tiny_llm/qwen3_week2.py::Qwen3ModelWeek2.__init__
+src/tiny_llm/models.py::dispatch_week3_batch_model
 ```
 
-Call the Week 2 model with several requests, one offset per batch element, and
-the mask returned by `BatchingKvCache`. Exercise requests joining and leaving
-at different positions. The model remains request-agnostic; slot ownership and
+Week 2 ends with a course-owned quantized matmul so you can inspect its loader,
+SIMD-matrix operations, and Split-K policy. Week 3 teaches serving mechanisms,
+so it should not make every cache and scheduler measurement depend on that
+teaching kernel's remaining projection overhead.
+
+Add a per-weight `use_mlx_quantized_linear` selector whose default remains
+`False`, preserving every Week 2 checkpoint. When selected,
+`quantized_linear` should call `mx.quantized_matmul` with the same packed
+weight, scales, biases, group size, bits, and transposed-weight convention.
+Then implement `dispatch_week3_batch_model` as the explicit construction seam:
+it builds the completed dense-cache Week 2 model with that selector enabled.
+
+Call this batch-ready model with several requests, one offset per batch
+element, and the mask returned by `BatchingKvCache`. Exercise requests joining
+and leaving at different positions. Only quantized projections cross the MLX
+seam; normalization, RoPE, activation, attention, cache state, and scheduling
+remain in your solution. The model remains request-agnostic; slot ownership and
 lifecycle belong to the cache and scheduler.
 
-You should pass all of the tests by running:
+Verify the projection seam and its batch-model factory with:
 
 ```bash
 pdm run test --week 3 --day 1 -- -k task_3
@@ -119,19 +147,41 @@ src/tiny_llm/batch.py
 ```
 
 First implement `Request.try_prefill` by prefilling the complete prompt in one
-call. Then complete the scheduler in `batch_generate`: move finished prefills
-into idle decode slots, collect the next token and offset for each slot, and
-remove requests that reach EOS or `max_seq_len`.
+call. The visible `prefill_max_step` input is reserved for Day 2; on Day 1, give
+this call a budget that covers the complete remaining prompt. Then complete the
+scheduler in `batch_generate`: move finished prefills into idle decode slots,
+collect the next token and offset for each slot, and remove requests that reach
+EOS or `max_seq_len`. A prompt longer than `max_seq_len` must fail before model
+or cache work, and a generated token that would cross the limit is not emitted.
 
-Run the complete scheduler with:
+Results are returned in **completion order**, because short requests can leave
+the batch before earlier long requests. Each result's `prompt_idx` maps it back
+to the original input position; do not reorder completed results into input
+order.
+
+Use the supplied scheduler checkpoint for full prefill, admission and slot
+reuse, immediate EOS, maximum-length termination, completion-order results,
+and their original `prompt_idx` values:
 
 ```bash
-pdm run batch-main
+pdm run test --week 3 --day 1 -- -k task_4
 ```
 
-By default, this command uses Qwen3-0.6B with a batch size of five and a fixed
-set of prompts. Record the longest interval between consecutive decode steps
-when one queued request has a much longer prompt. That interval is the baseline
-for Day 2.
+Then run the complete scheduler against the real model:
+
+```bash
+pdm run batch-main --solution tiny_llm --loader week2
+```
+
+By default, `batch-main` uses Qwen3-0.6B with a batch size of five and a fixed
+prompt set. Treat it as a product smoke: watch requests enter, decode, finish,
+and release their slots. Its shuffled prompt order and cumulative wall-clock
+display are not the source of a decode-gap measurement.
+
+Day 2's deterministic `bench-chunked-prefill` runner owns that comparison. Its
+512-token budget processes every prompt in the checked 64–512-token trace in
+one chunk, so that row is the reproducible Day 1 control. The runner records
+the exact token ids, output budget, seed, process order, and decode-completion
+gaps before Day 2 changes the prefill budget.
 
 {{#include copyright.md}}

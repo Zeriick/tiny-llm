@@ -10,39 +10,20 @@ namespace tiny_llm_ext {
 void load_library(const char *path);
 
 ///////////////////////////////////////////////////////////////////////////////
-// Operation
+// Week 2, Day 3: quantized matrix multiplication
 ///////////////////////////////////////////////////////////////////////////////
 
-/**
- * Quantized matrix multiplication
- * Computes: a @ dequant(b, scales, biases)
- *
- * @param scales Quantization scales, shape [n, k/group_size]
- * @param biases Quantization biases, shape [n, k/group_size]
- * @param group_size Size of each quantization group
- * @param bits Number of bits per packed value (currently only 4 is supported)
- * @param a Input array, shape [..., m, k]
- * @param b Quantized weight array. If transpose_b is true, shape [n, k*bits/32];
- *          otherwise shape [k*bits/32, n]
- * @param transpose_b Whether b is provided in transposed matmul layout
- * @param s Stream on which to schedule the operation
- **/
 mx::array quantized_matmul(
-    const mx::array& scales,      // Quantization scales
-    const mx::array& biases,      // Quantization biases
-    int group_size,               // Quantization group size
-    int bits,                     // Bits per packed value (only 4 is supported)
-    const mx::array& a,           // Input activation
-    const mx::array& b,           // Quantized weight
-    bool transpose_b = false,     // Whether to transpose b
-    bool use_simdgroup = true,    // Use the decode SIMD matvec for M <= 8
-    bool use_split_k = false,     // Reserved for the Day 7 checkpoint
-    mx::StreamOrDevice s = {}     // Stream
-);
-
-///////////////////////////////////////////////////////////////////////////////
-// Primitive
-///////////////////////////////////////////////////////////////////////////////
+    const mx::array& scales,
+    const mx::array& biases,
+    int group_size,
+    int bits,
+    const mx::array& a,
+    const mx::array& b,
+    bool transpose_b = false,
+    bool use_simdgroup = true,
+    bool use_split_k = false,
+    mx::StreamOrDevice s = {});
 
 class QuantizedMatmul : public mx::Primitive {
 public:
@@ -52,44 +33,30 @@ public:
         int bits,
         bool transpose_b,
         bool use_simdgroup,
-        bool use_split_k
-    ) : mx::Primitive(stream),
-        group_size_(group_size),
-        bits_(bits),
-        transpose_b_(transpose_b),
-        use_simdgroup_(use_simdgroup),
-        use_split_k_(use_split_k) {}
+        bool use_split_k)
+        : mx::Primitive(stream),
+          group_size_(group_size),
+          bits_(bits),
+          transpose_b_(transpose_b),
+          use_simdgroup_(use_simdgroup),
+          use_split_k_(use_split_k) {}
 
-    /**
-     * A primitive must know how to evaluate itself on the CPU/GPU
-     * for the given inputs and populate the output array.
-     */
     void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
     void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
-
-    /** The Jacobian-vector product. */
-    std::vector<mx::array> jvp(const std::vector<mx::array>& primals,
-                               const std::vector<mx::array>& tangents,
-                               const std::vector<int>& argnums) override;
-
-    /** The vector-Jacobian product. */
-    std::vector<mx::array> vjp(const std::vector<mx::array>& primals,
-                               const std::vector<mx::array>& cotangents,
-                               const std::vector<int>& argnums,
-                               const std::vector<mx::array>& outputs) override;
-
-    /** Vectorized mapping. */
+    std::vector<mx::array> jvp(
+        const std::vector<mx::array>& primals,
+        const std::vector<mx::array>& tangents,
+        const std::vector<int>& argnums) override;
+    std::vector<mx::array> vjp(
+        const std::vector<mx::array>& primals,
+        const std::vector<mx::array>& cotangents,
+        const std::vector<int>& argnums,
+        const std::vector<mx::array>& outputs) override;
     std::pair<std::vector<mx::array>, std::vector<int>> vmap(
         const std::vector<mx::array>& inputs,
         const std::vector<int>& axes) override;
-
-    /** Print the primitive. */
     void print(std::ostream& os);
-
-    /** Name of the primitive. */
     const char* name() const override { return "QuantizedMatmul"; }
-
-    /** Equivalence check. */
     bool is_equivalent(const mx::Primitive& other) const override;
 
 private:
@@ -100,25 +67,10 @@ private:
     bool use_split_k_;
 };
 
-/**
- * Flash attention
- * Computes: softmax(q @ k.T * scale + mask) @ v
- *
- * All inputs are flattened to 3D head-batch tensors:
- * q:    [N, L, E]
- * k/v:  [N_kv, S, E]
- * mask: [N, L, S]
- *
- * @param q Query tensor
- * @param k Key tensor
- * @param v Value tensor
- * @param mask Attention mask tensor
- * @param scale Attention scaling factor
- * @param is_causal Whether to enable causal-mask fast path
- * @param num_kv_heads Number of KV heads before flattening batch dims
- * @param num_heads Number of query heads before flattening batch dims
- * @param s Stream on which to schedule the operation
- **/
+///////////////////////////////////////////////////////////////////////////////
+// Legacy local declaration retained for the existing branch.
+///////////////////////////////////////////////////////////////////////////////
+
 mx::array flash_attention(
     const mx::array& q,
     const mx::array& k,
@@ -146,25 +98,222 @@ public:
 
     void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
     void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
-
-    std::vector<mx::array> jvp(const std::vector<mx::array>& primals,
-                               const std::vector<mx::array>& tangents,
-                               const std::vector<int>& argnums) override;
-
-    std::vector<mx::array> vjp(const std::vector<mx::array>& primals,
-                               const std::vector<mx::array>& cotangents,
-                               const std::vector<int>& argnums,
-                               const std::vector<mx::array>& outputs) override;
-
+    std::vector<mx::array> jvp(
+        const std::vector<mx::array>& primals,
+        const std::vector<mx::array>& tangents,
+        const std::vector<int>& argnums) override;
+    std::vector<mx::array> vjp(
+        const std::vector<mx::array>& primals,
+        const std::vector<mx::array>& cotangents,
+        const std::vector<int>& argnums,
+        const std::vector<mx::array>& outputs) override;
     std::pair<std::vector<mx::array>, std::vector<int>> vmap(
         const std::vector<mx::array>& inputs,
         const std::vector<int>& axes) override;
-
     void print(std::ostream& os);
-
     const char* name() const override { return "FlashAttention"; }
-
     bool is_equivalent(const mx::Primitive& other) const override;
+
+private:
+    float scale_;
+    bool is_causal_;
+    int num_kv_heads_;
+    int num_heads_;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// Upstream cumulative interfaces retained as learner-owned stubs.
+///////////////////////////////////////////////////////////////////////////////
+
+// Week 3, Day 4.
+mx::array quantized_embedding(
+    const mx::array& indices,
+    const mx::array& scales,
+    const mx::array& biases,
+    const mx::array& weight,
+    int group_size,
+    int bits,
+    mx::StreamOrDevice s = {});
+
+class QuantizedEmbedding : public mx::Primitive {
+public:
+    explicit QuantizedEmbedding(mx::Stream stream) : mx::Primitive(stream) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("QuantizedEmbedding has no vmap implementation.");
+    }
+    const char* name() const override { return "QuantizedEmbedding"; }
+};
+
+// Week 2, Day 4.
+mx::array rms_norm(
+    const mx::array& x,
+    const mx::array& weight,
+    float eps,
+    mx::StreamOrDevice s = {});
+mx::array rope(
+    const mx::array& x,
+    const mx::array& offsets,
+    int dims,
+    float base,
+    bool traditional,
+    mx::StreamOrDevice s = {});
+mx::array swiglu(
+    const mx::array& gate,
+    const mx::array& up,
+    mx::StreamOrDevice s = {});
+
+class Week2RMSNorm : public mx::Primitive {
+public:
+    Week2RMSNorm(mx::Stream stream, float eps) : mx::Primitive(stream), eps_(eps) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("Week2RMSNorm has no vmap implementation.");
+    }
+    const char* name() const override { return "Week2RMSNorm"; }
+
+private:
+    float eps_;
+};
+
+class Week2RoPE : public mx::Primitive {
+public:
+    Week2RoPE(mx::Stream stream, int dims, float base, bool traditional)
+        : mx::Primitive(stream), dims_(dims), base_(base), traditional_(traditional) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("Week2RoPE has no vmap implementation.");
+    }
+    const char* name() const override { return "Week2RoPE"; }
+
+private:
+    int dims_;
+    float base_;
+    bool traditional_;
+};
+
+class Week2SwiGLU : public mx::Primitive {
+public:
+    explicit Week2SwiGLU(mx::Stream stream) : mx::Primitive(stream) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("Week2SwiGLU has no vmap implementation.");
+    }
+    const char* name() const override { return "Week2SwiGLU"; }
+};
+
+// Week 2, Day 5.
+mx::array decode_attention(
+    const mx::array& q,
+    const mx::array& k,
+    const mx::array& v,
+    const mx::array& mask,
+    float scale,
+    bool is_causal,
+    bool has_mask,
+    int num_heads,
+    int num_kv_heads,
+    mx::StreamOrDevice s = {});
+
+class Week2DecodeAttention : public mx::Primitive {
+public:
+    Week2DecodeAttention(
+        mx::Stream stream,
+        float scale,
+        bool is_causal,
+        bool has_mask,
+        int num_heads,
+        int num_kv_heads)
+        : mx::Primitive(stream),
+          scale_(scale),
+          is_causal_(is_causal),
+          has_mask_(has_mask),
+          num_heads_(num_heads),
+          num_kv_heads_(num_kv_heads) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("Week2DecodeAttention has no vmap implementation.");
+    }
+    const char* name() const override { return "Week2DecodeAttention"; }
+
+private:
+    float scale_;
+    bool is_causal_;
+    bool has_mask_;
+    int num_heads_;
+    int num_kv_heads_;
+};
+
+// Week 3, Day 3.
+mx::array paged_cache_update(
+    const mx::array& pages,
+    const mx::array& values,
+    int page_id,
+    int start,
+    mx::StreamOrDevice s = {});
+
+class PagedCacheUpdate : public mx::Primitive {
+public:
+    PagedCacheUpdate(mx::Stream stream, int page_id, int start)
+        : mx::Primitive(stream), page_id_(page_id), start_(start) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("PagedCacheUpdate has no vmap implementation.");
+    }
+    const char* name() const override { return "PagedCacheUpdate"; }
+
+private:
+    int page_id_;
+    int start_;
+};
+
+// Week 3, Day 4; Day 5 keeps the same interface for the long-prefill schedule.
+mx::array paged_attention(
+    const mx::array& q,
+    const mx::array& key_pages,
+    const mx::array& value_pages,
+    const mx::array& block_table,
+    const mx::array& context_lens,
+    float scale,
+    bool is_causal,
+    int num_kv_heads,
+    int num_heads,
+    mx::StreamOrDevice s = {});
+
+class PagedAttention : public mx::Primitive {
+public:
+    PagedAttention(mx::Stream stream, float scale, bool is_causal, int num_kv_heads, int num_heads)
+        : mx::Primitive(stream),
+          scale_(scale),
+          is_causal_(is_causal),
+          num_kv_heads_(num_kv_heads),
+          num_heads_(num_heads) {}
+    void eval_cpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    void eval_gpu(const std::vector<mx::array>& inputs, std::vector<mx::array>& outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(
+        const std::vector<mx::array>&,
+        const std::vector<int>&) override {
+        throw std::runtime_error("PagedAttention has no vmap implementation.");
+    }
+    const char* name() const override { return "PagedAttention"; }
 
 private:
     float scale_;

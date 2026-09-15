@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from .workspace import Workspace
+from typing import Any
 
 
 class AgentError(ValueError):
@@ -15,14 +12,14 @@ class AgentError(ValueError):
 
 @dataclass(frozen=True)
 class FinalAction:
-    """Week 4, Day 2: a model response that finishes the task."""
+    """Week 4, Day 1: a model response that finishes the task."""
 
     final: str
 
 
 @dataclass(frozen=True)
 class ToolAction:
-    """Week 4, Day 2: one validated tool request from the model."""
+    """Week 4, Day 1: one validated tool request from the model."""
 
     tool: str
     arguments: dict[str, Any]
@@ -31,16 +28,25 @@ class ToolAction:
 AgentAction = FinalAction | ToolAction
 
 
+TOOL_FIELDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "list_files": (frozenset(), frozenset({"path"})),
+    "read_file": (frozenset({"path"}), frozenset()),
+    "write_file": (frozenset({"path", "content"}), frozenset()),
+    "edit_file": (frozenset({"path", "old", "new"}), frozenset()),
+    "run_command": (frozenset({"argv"}), frozenset()),
+}
+
+
 def parse_action(
     response: str,
     available_tools: frozenset[str] | None = None,
 ) -> AgentAction:
-    """Week 4, Day 2: strictly parse and validate exactly one JSON action."""
+    """Week 4, Day 1: strictly parse and validate exactly one JSON action."""
 
     pass
 
 
-def build_system_prompt(workspace: Workspace) -> str:
-    """Week 4, Day 2: describe only the tools authorized for this run."""
+def build_system_prompt(workspace: Any) -> str:
+    """Week 4, Day 1: describe only the tools authorized for this run."""
 
     pass

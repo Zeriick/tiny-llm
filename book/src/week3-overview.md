@@ -6,12 +6,17 @@
 Week 3 turns the optimized single-request model into a multi-request serving
 engine. Students add scheduling, request-owned cache state, shared page pools,
 and the runtime metadata needed to read noncontiguous K/V directly. The final
-model uses one page-aware attention interface with separate schedules for
-one-token decode and multi-token prefill.
+model uses one page-aware attention interface. A correct direct page-walking
+implementation may serve every query shape; the completed reference adds a
+tiled schedule for the supported BF16 long-prefill hot case.
 
-As in Week 2, **MLX** names the framework or its production operators, the
-**reference solution** names `tiny_llm_ref`, and **your solution** names the
-code you write in `tiny_llm`.
+Week 2's course-owned quantized projections remain the inspectable endpoint of
+that week's kernel lessons. Week 3 deliberately switches dense-model
+projections to `mx.quantized_matmul` at model construction, while retaining the
+course-owned normalization, activation, cache, attention, paging, and
+scheduler paths. This keeps Week 3 focused on serving-system mechanisms rather
+than carrying the teaching kernel's projection cost through every benchmark.
+
 
 ## What We’ll Cover
 
@@ -19,34 +24,35 @@ code you write in `tiny_llm`.
 - Chunked prefill and scheduler fairness
 - Paged KV storage and page-walking attention
 - Paged FlashAttention for long prefill
-- Optional speculative decoding over rewindable caches
-- Optional Mixture-of-Experts model support
+- Optional Day 6 Mixture-of-Experts model support
+- Optional Day 7 speculative decoding over rewindable caches
 
-The ordering is intentional. Day 1 batches independent request states. Day 2
+Day 1 introduces that projection seam and batches independent request states. Day 2
 splits long prefills so they cannot monopolize the scheduler. Day 3 replaces a
 growing dense cache with fixed-size pages while retaining a dense-gather
 compatibility path. Day 4 removes that gather by teaching attention to walk the
-page table directly with a correctness-first schedule. Day 5 then tiles that
-same page-walking operation with Week 2's matrix fragments. Page translation
-is therefore introduced before it is optimized.
+page table directly with a correctness-first implementation; one kernel may
+serve all query shapes. Day 5 then replaces the supported BF16 long-prefill hot
+case with a tiled schedule. Page translation is therefore introduced before
+it is optimized.
 
 These five days form the required path in your solution. The final model in
-your solution runs paged FlashAttention for long prefill and the paged vector
-kernel for short queries.
-Both schedules read the same page pool through the same block-table interface;
-neither rebuilds dense K/V.
+your solution runs paged FlashAttention for supported BF16 long prefill and
+retains correct direct fallbacks for short queries and generic shapes. Every
+schedule reads the same page pool through the same block-table interface;
+none rebuilds dense K/V.
 
-Paged attention is not an automatic single-request latency win. It primarily
-improves serving capacity, cache reuse, and batching; page-table indirection
-can make one request slower. This week measures those tradeoffs rather than
-assuming an algorithm with a production name is automatically fast. Each
-chapter ends with a focused measurement, while the
+Paged attention is not an automatic single-request latency win. The checked
+trace measures lower KV storage, page reuse, incremental growth, and batching;
+page-table indirection can make one request slower. It does not establish an
+admission-capacity gain without a memory-capped sweep. Each chapter ends with a
+focused measurement, while the
 [performance appendix](./appendix-performance.md) records the matched
 chapter-by-chapter results.
 
-Speculative decoding follows the paged-attention chapters because rejection
-needs a precise cache rewind operation, and multi-token verification needs the
-page-aware long-query path. MoE is independent of the cache and scheduler, so
-it remains an optional model extension and is not required to complete Week 3.
+Optional Day 6 adds MoE model support independently of the cache and scheduler.
+Optional Day 7 then adds speculative decoding, whose rejection path needs a
+precise cache rewind operation and whose multi-token verification needs the
+page-aware long-query path. Neither extension is required to complete Week 3.
 
 {{#include copyright.md}}

@@ -19,13 +19,16 @@ from .week2_kernels import (
 WEEK2_CHECKPOINTS = (
     "kv-cache",
     "quantized-matvec",
-    "decode-attention",
     "rmsnorm",
     "rope",
     "swiglu",
+    "decode-attention",
     "simd-matmul",
     "split-k",
 )
+
+DECODE_ATTENTION_MAX_CONTEXT = 256
+DECODE_ATTENTION_MAX_QUERY = 2
 
 
 def _linear(x: mx.array, weight: mx.array | QuantizedWeights) -> mx.array:
@@ -137,7 +140,12 @@ class Qwen3MultiHeadAttention:
         k, v, _, mask = cache.update_and_fetch(
             k, v, mask_length=L, mask=mask
         )
-        if self.use_decode_attention and L <= 8 and k.shape[-2] <= 256:
+        if (
+            self.use_decode_attention
+            and L <= DECODE_ATTENTION_MAX_QUERY
+            and k.shape[-2] <= DECODE_ATTENTION_MAX_CONTEXT
+            and not isinstance(mask, mx.array)
+        ):
             x = decode_attention_custom(q, k, v, scale=self.scale, mask=mask)
         else:
             x = scaled_dot_product_attention_grouped(
@@ -247,7 +255,7 @@ class Qwen3TransformerBlock:
     def __call__(
         self,
         x: mx.array,
-        offset: int,
+        offset: int | list[int] | mx.array,
         cache: TinyKvCache,
         mask: mx.array | str | None = None,
     ) -> mx.array:
@@ -260,7 +268,12 @@ class Qwen3TransformerBlock:
 
 
 class Qwen3ModelWeek2:
-    def __init__(self, mlx_model: Any, checkpoint: str = "split-k"):
+    def __init__(
+        self,
+        mlx_model: Any,
+        checkpoint: str = "split-k",
+        use_mlx_quantized_linear: bool = False,
+    ):
         if checkpoint not in WEEK2_CHECKPOINTS:
             raise ValueError(
                 f"unknown Week 2 checkpoint {checkpoint!r}; "
@@ -277,6 +290,10 @@ class Qwen3ModelWeek2:
         use_decode_attention = checkpoint_index >= WEEK2_CHECKPOINTS.index(
             "decode-attention"
         )
+        use_simdgroup_matmul = checkpoint_index >= WEEK2_CHECKPOINTS.index(
+            "simd-matmul"
+        )
+        use_split_k_matmul = checkpoint_index >= WEEK2_CHECKPOINTS.index("split-k")
         self.num_hidden_layers = mlx_model.args.num_hidden_layers
         self.use_fast_rope = use_fast_rope
         self.hidden_size = mlx_model.args.hidden_size
@@ -286,7 +303,12 @@ class Qwen3ModelWeek2:
 
         def model_weight(layer: Any) -> mx.array | QuantizedWeights:
             if use_quantized_weights:
-                return QuantizedWeights.from_mlx_layer(layer)
+                return QuantizedWeights.from_mlx_layer(
+                    layer,
+                    use_simdgroup_matmul=use_simdgroup_matmul,
+                    use_split_k_matmul=use_split_k_matmul,
+                    use_mlx_quantized_linear=use_mlx_quantized_linear,
+                )
             return dequantize_linear(layer).astype(mx.bfloat16)
 
         embedding_weight = model_weight(mlx_model.model.embed_tokens)
@@ -333,7 +355,8 @@ class Qwen3ModelWeek2:
                 use_decode_attention=use_decode_attention,
             )
             self.layers_inner.append(layer)
-        self.norm = RMSNorm(
+        norm_cls = FastRMSNorm if use_fast_rms_norm else RMSNorm
+        self.norm = norm_cls(
             mlx_model.args.hidden_size,
             weight=mlx_model.model.norm.weight,
             eps=mlx_model.args.rms_norm_eps,
@@ -374,10 +397,19 @@ class Qwen3ModelWeek2:
         hidden_states = self.embedding(inputs)
         mask: mx.array | str | None = None if inputs.shape[1] == 1 else "causal"
 
+        if not self.use_fast_rope:
+            rope_offsets = offset
+        elif isinstance(offset, int):
+            rope_offsets = mx.full((inputs.shape[0],), offset, dtype=mx.int32)
+        elif isinstance(offset, list):
+            rope_offsets = mx.array(offset, dtype=mx.int32)
+        else:
+            rope_offsets = offset
+
         for layer, layer_cache in zip(self.layers_inner, cache):
             hidden_states = layer(
                 hidden_states,
-                offset=offset,
+                offset=rope_offsets,
                 cache=layer_cache,
                 mask=mask,
             )

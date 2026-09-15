@@ -16,3 +16,8 @@ def dispatch_model(model_name: str, mlx_model, week: int, **kwargs):
         return Qwen3ModelWeek3(mlx_model, **kwargs)
     else:
         raise ValueError(f"{model_name} for week {week} not supported")
+
+
+def dispatch_week3_batch_model(model_name: str, mlx_model):
+    """Build the dense-cache Week 3 scheduler model with MLX projections."""
+    pass

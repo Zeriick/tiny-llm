@@ -24,19 +24,26 @@ and performance baseline.
 
 The course follows a four-week learning path:
 
-- **Week 1: From Matmul to Text.** Build a readable Qwen3 model
-  from array operations: attention, RoPE, GQA, RMSNorm, the MLP, sampling, and
+- **Week 1: From Matmul to Text.** Build a Qwen3 model directly from `mlx.core`
+  array operations: attention, RoPE, GQA, RMSNorm, the MLP, sampling, and
   the autoregressive loop.
 - **Week 2: A Step Closer to vLLM.** Add a KV cache, establish a
-  synchronized MLX baseline, and let profiles choose the next optimization.
+  synchronized MLX baseline, and let matched benchmarks choose each optimization.
   The path moves from quantized decode matvec to fused model kernels, tiled
   prefill, and split-K where the measured Qwen shapes need it.
 - **Week 3: Build a Mini vLLM.** Introduce continuous
   batching and chunked admission, then make paged KV the canonical serving
   layout. Decode attention and FlashAttention learn to read pages directly so
   the scheduler does not rebuild dense history on every step.
-- **Week 4: Build a Coding Agent.** Use multi-turn sessions to motivate cache
-  reuse, context compaction, rewind, interruption, and evaluation.
+- **Week 4: Build a Coding Agent.** Start with a bounded, validated agent loop,
+  then connect it to a small workspace. The course is publishing one reviewed
+  checkpoint at a time; Days 1 through 9 now cover inspection, approved edits,
+  one validation command, simple effect receipts, and one visible
+  checkpoint-and-resume boundary, receipt-backed context compaction, and one
+  visible inspect-and-steer pause, and deterministic evaluation of observable
+  outcomes, then tokenizer/KV-prefix reuse for two isolated steered branches
+  and one explicit evidence-backed selection, followed by bounded,
+  range-retrievable evidence for oversized tool results.
 
 ## Why MLX and Qwen3?
 
@@ -64,45 +71,65 @@ pdm run test-refsol -- -- -k week_1
 
 The `tiny_llm` package is where students implement the exercises.
 `tiny_llm_ref` contains the reference solution used by the tests and benchmark
-appendix. The detailed chapter order and current status live in the
-[book summary](book/src/SUMMARY.md).
+appendix. The [book summary](book/src/SUMMARY.md) lists the chapter order;
+implementation, test, and publication readiness is tracked below.
 
 ## Roadmap
 
-The status columns track whether each chapter's code, tests, and documentation
-are ready. Week 4 remains a design draft and is not yet part of the rendered
-daily course.
+The table tracks implementation (`Code`), tests (`Test`), rendered chapters (`Doc`), and Chi's review of learner-facing material (`Audit`). Week 4 is publishing one reviewed day at a time; Days 1 through 9 are currently available to learners. The Audit column reflects Chi's personal editorial pass on the published course content and is independent of code/test/doc readiness.
 
-| Week + Chapter | Topic | Code | Test | Doc |
-|---|---|---|---|---|
-| 1.1 | Attention | ✅ | ✅ | ✅ |
-| 1.2 | RoPE | ✅ | ✅ | ✅ |
-| 1.3 | Grouped Query Attention | ✅ | ✅ | ✅ |
-| 1.4 | RMSNorm and MLP | ✅ | ✅ | ✅ |
-| 1.5 | Load the Model | ✅ | ✅ | ✅ |
-| 1.6 | Generate Responses (aka Decoding) | ✅ | ✅ | ✅ |
-| 1.7 | Sampling | ✅ | ✅ | ✅ |
-| 2.1 | KV Cache | ✅ | ✅ | 🚧 |
-| 2.2 | Benchmark and Profile | 🚧 | 🚧 | 🚧 |
-| 2.3 | Quantized Matvec | ✅ | ✅ | 🚧 |
-| 2.4 | Fused Decode Attention | 🚧 | 🚧 | 🚧 |
-| 2.5 | Fused Model Kernels | 🚧 | 🚧 | 🚧 |
-| 2.6 | SIMD-Matrix Prefill | ✅ | ✅ | 🚧 |
-| 2.7 | Split-K Prefill | ✅ | ✅ | 🚧 |
-| 3.1 | Continuous Batching | ✅ | ✅ | 🚧 |
-| 3.2 | Chunked Prefill | ✅ | ✅ | 🚧 |
-| 3.3 | Paged KV Cache | ✅ | ✅ | 🚧 |
-| 3.4 | Direct Paged Attention | ✅ | ✅ | 🚧 |
-| 3.5 | Paged FlashAttention | ✅ | ✅ | 🚧 |
-| 3.6 (optional) | Speculative Decoding | 🚧 | 🚧 | 🚧 |
-| 3.x (optional) | MoE (Mixture of Experts) | ✅ | ✅ | ✅ |
-| 4.1 | Agent Loop | 🚧 | 🚧 | 🚧 |
-| 4.2 | Tools | 🚧 | 🚧 | 🚧 |
-| 4.3 | Safety and Validation | 🚧 | 🚧 | 🚧 |
-| 4.4 | Interactive Sessions | 🚧 | 🚧 | 🚧 |
-| 4.5 | Context Compaction | 🚧 | 🚧 | 🚧 |
-| 4.6 | Control and Recovery | 🚧 | 🚧 | 🚧 |
-| 4.7 | Evaluation | 🚧 | 🚧 | 🚧 |
+Day 3 can send file contents to the model, modify files after approval, and run
+one exact configured command. Use a disposable workspace without secrets and
+read the [Week 4 overview](book/src/week4-overview.md) before running the loop.
+Day 4 checkpoints a complete tool-observation boundary with the scripted
+model's fake cache metadata, then restores a fresh model without replaying the
+completed edit or command.
+Day 5 compacts older completed effects in the model-visible transcript while
+their exact receipts retain the full action, result, and changed artifacts.
+Day 6 inspects one complete-observation checkpoint, appends one visible operator
+instruction, and resumes a fresh model without replaying the completed effect.
+Day 7 evaluates one completed run from declared final, file, result, and receipt
+facts without grading hidden reasoning or exact transcript shape.
+Day 8 reuses one real tokenizer/KV checkpoint for two differently steered,
+effect-isolated continuations, evaluates both with Day 7's harness, and makes
+one explicit passing selection without pretending completed effects were
+rewound.
+Day 9 stores exact oversized tool-result bytes outside the model prompt, shows
+a bounded identity/digest/head-tail observation, and lets the model retrieve
+one explicit byte range through the existing loop.
+
+| Week + Chapter | Topic | Code | Test | Doc | Audit |
+|---|---|---|---|---|---|
+| 1.1 | Attention | ✅ | ✅ | ✅ | ✅ |
+| 1.2 | RoPE | ✅ | ✅ | ✅ | ✅ |
+| 1.3 | Grouped Query Attention | ✅ | ✅ | ✅ | ✅ |
+| 1.4 | RMSNorm and MLP | ✅ | ✅ | ✅ | ✅ |
+| 1.5 | Load the Model | ✅ | ✅ | ✅ | ✅ |
+| 1.6 | Generate Responses (aka Decoding) | ✅ | ✅ | ✅ | ✅ |
+| 1.7 | Sampling | ✅ | ✅ | ✅ | ✅ |
+| 2.1 | KV Cache | ✅ | ✅ | ✅ | 🚧 |
+| 2.2 | Benchmarking and Profiling | ✅ | ✅ | ✅ | 🚧 |
+| 2.3 | Quantize the Model | ✅ | ✅ | ✅ | 🚧 |
+| 2.4 | Fused Model Kernels | ✅ | ✅ | ✅ | 🚧 |
+| 2.5 | Fused Decode Attention | ✅ | ✅ | ✅ | 🚧 |
+| 2.6 | SIMD-Matrix Prefill | ✅ | ✅ | ✅ | 🚧 |
+| 2.7 | Split-K Prefill | ✅ | ✅ | ✅ | 🚧 |
+| 3.1 | Continuous Batching | ✅ | ✅ | ✅ | 🚧 |
+| 3.2 | Chunked Prefill | ✅ | ✅ | ✅ | 🚧 |
+| 3.3 | Paged KV Cache | ✅ | ✅ | ✅ | 🚧 |
+| 3.4 | Direct Paged Attention | ✅ | ✅ | ✅ | 🚧 |
+| 3.5 | Paged FlashAttention | ✅ | ✅ | ✅ | 🚧 |
+| 3.6 (optional) | MoE (Mixture of Experts) | ✅ | ✅ | ✅ | 🚧 |
+| 3.7 (optional) | Speculative Decoding | ✅ | ✅ | ✅ | 🚧 |
+| 4.1 | Validated Agent Loop | ✅ | ✅ | ✅ | 🚧 |
+| 4.2 | Inspect a Workspace | ✅ | ✅ | ✅ | 🚧 |
+| 4.3 | Edit, Validate, and Record | ✅ | ✅ | ✅ | 🚧 |
+| 4.4 | Checkpoint and Resume | ✅ | ✅ | ✅ | 🚧 |
+| 4.5 | Compact Completed Work | ✅ | ✅ | ✅ | 🚧 |
+| 4.6 | Inspect and Steer a Paused Agent | ✅ | ✅ | ✅ | 🚧 |
+| 4.7 | Evaluate Observable Outcomes | ✅ | ✅ | ✅ | 🚧 |
+| 4.8 | Fork, Steer, and Select | ✅ | ✅ | ✅ | 🚧 |
+| 4.9 | Bound Tool Evidence | ✅ | ✅ | ✅ | 🚧 |
 
 Other topics not covered include quantized or compressed KV caches,
 cross-request prefix caching, fine-tuning, and long-context techniques.

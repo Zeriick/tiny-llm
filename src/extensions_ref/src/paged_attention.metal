@@ -1,8 +1,8 @@
 #include <metal_simdgroup>
 #include <metal_simdgroup_matrix>
 #include <metal_stdlib>
-#include "mlx/backend/metal/kernels/steel/attn/loader.h"
 #include "mlx/backend/metal/kernels/utils.h"
+#include "cooperative_matrix.h"
 
 using namespace metal;
 
@@ -276,12 +276,12 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
     constexpr int OUTPUT_FRAGMENTS = HEAD_DIM / MMA_SIZE;
     constexpr int SCORE_FRAGMENTS = BK / MMA_SIZE;
     constexpr float LOG2_E = 1.44269504089f;
-    using QBlockLoader = mlx::steel::BlockLoaderT<
-        bfloat, BQ, HEAD_DIM, LDQ, 1, 1, THREADS>;
-    using KBlockLoader = mlx::steel::BlockLoaderT<
-        bfloat, BK, HEAD_DIM, 1, LDK, 0, THREADS>;
-    using VBlockLoader = mlx::steel::BlockLoaderT<
-        bfloat, BK, HEAD_DIM, LDV, 1, 0, THREADS>;
+    using QBlockLoader = tiny_llm::CooperativeTileLoader<
+        bfloat, BQ, HEAD_DIM, LDQ, THREADS>;
+    using KBlockLoader = tiny_llm::CooperativeTileLoader<
+        bfloat, BK, HEAD_DIM, LDK, THREADS, true>;
+    using VBlockLoader = tiny_llm::CooperativeTileLoader<
+        bfloat, BK, HEAD_DIM, LDV, THREADS>;
 
     const int query_block = group_id.x;
     const int query_head = group_id.y;
@@ -301,18 +301,14 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
     threadgroup bfloat kv_tile[KV_STORAGE];
     threadgroup int physical_pages[BK];
 
-    QBlockLoader q_loader(
+    const int live_queries = clamp(L - query_block * BQ, 0, BQ);
+    QBlockLoader::load(
         q_head + query_block * BQ * HEAD_DIM,
         HEAD_DIM,
         q_tile,
-        simd_gid,
-        lane);
-    const int live_queries = clamp(L - query_block * BQ, 0, BQ);
-    if (live_queries == BQ) {
-        q_loader.load_unsafe();
-    } else {
-        q_loader.load_safe(short2(HEAD_DIM, live_queries));
-    }
+        thread_idx,
+        live_queries,
+        HEAD_DIM);
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     simdgroup_matrix<float, MMA_SIZE, MMA_SIZE> output[OUTPUT_FRAGMENTS];
@@ -355,18 +351,14 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
             const int page_offset =
                 ((physical_pages[0] * num_kv_heads + kv_head) * page_size +
                  tile_page_slot) * HEAD_DIM;
-            KBlockLoader k_loader(
+            const int live_keys = clamp(context - tile_start, 0, BK);
+            KBlockLoader::load(
                 key_pages + page_offset,
                 HEAD_DIM,
                 kv_tile,
-                simd_gid,
-                lane);
-            const int live_keys = clamp(context - tile_start, 0, BK);
-            if (live_keys == BK) {
-                k_loader.load_unsafe();
-            } else {
-                k_loader.load_safe(short2(HEAD_DIM, live_keys));
-            }
+                thread_idx,
+                live_keys,
+                HEAD_DIM);
         } else {
             for (int idx = thread_idx; idx < BK * HEAD_DIM; idx += THREADS) {
                 const int key = idx / HEAD_DIM;
@@ -448,18 +440,14 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
             const int page_offset =
                 ((physical_pages[0] * num_kv_heads + kv_head) * page_size +
                  tile_page_slot) * HEAD_DIM;
-            VBlockLoader v_loader(
+            const int live_keys = clamp(context - tile_start, 0, BK);
+            VBlockLoader::load(
                 value_pages + page_offset,
                 HEAD_DIM,
                 kv_tile,
-                simd_gid,
-                lane);
-            const int live_keys = clamp(context - tile_start, 0, BK);
-            if (live_keys == BK) {
-                v_loader.load_unsafe();
-            } else {
-                v_loader.load_safe(short2(HEAD_DIM, live_keys));
-            }
+                thread_idx,
+                live_keys,
+                HEAD_DIM);
         } else {
             for (int idx = thread_idx; idx < BK * HEAD_DIM; idx += THREADS) {
                 const int key = idx / HEAD_DIM;
@@ -505,13 +493,14 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
     }
 }
 
-[[kernel]] void paged_attention_scalar_f32(
-    device const float* q [[buffer(0)]],
-    device const float* key_pages [[buffer(1)]],
-    device const float* value_pages [[buffer(2)]],
+template <typename T>
+[[kernel]] void paged_attention_scalar(
+    device const T* q [[buffer(0)]],
+    device const T* key_pages [[buffer(1)]],
+    device const T* value_pages [[buffer(2)]],
     device const int* block_table [[buffer(3)]],
     device const int* context_lens [[buffer(4)]],
-    device float* out [[buffer(5)]],
+    device T* out [[buffer(5)]],
     constant const int& N [[buffer(6)]],
     constant const int& L [[buffer(7)]],
     constant const int& D [[buffer(8)]],
@@ -666,9 +655,12 @@ instantiate_kernel("paged_attention_decode_bf16_d128", paged_attention_decode, b
             const int dim = lane + output_idx * BK;
             if (dim < D) {
                 out[n * L * D + query_row * D + dim] = running_sum == 0.0f
-                    ? 0.0f
-                    : output_fragment[output_idx] / running_sum;
+                    ? T(0.0f)
+                    : T(output_fragment[output_idx] / running_sum);
             }
         }
     }
 }
+
+instantiate_kernel("paged_attention_scalar_f32", paged_attention_scalar, float);
+instantiate_kernel("paged_attention_scalar_bf16", paged_attention_scalar, bfloat16_t);
