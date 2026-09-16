@@ -13,6 +13,7 @@ from .week2_kernels import (
     FastRMSNorm,
     FastRoPE,
     decode_attention_custom,
+    normalize_rope_offsets,
     swiglu,
 )
 
@@ -376,7 +377,7 @@ class Qwen3ModelWeek2:
     def __call__(
         self,
         inputs: mx.array,
-        offset: int,
+        offset: int | list[int] | mx.array,
         cache: list[TinyKvCache],
         logits_to_keep: int | None = None,
     ) -> mx.array:
@@ -397,14 +398,12 @@ class Qwen3ModelWeek2:
         hidden_states = self.embedding(inputs)
         mask: mx.array | str | None = None if inputs.shape[1] == 1 else "causal"
 
-        if not self.use_fast_rope:
-            rope_offsets = offset
-        elif isinstance(offset, int):
-            rope_offsets = mx.full((inputs.shape[0],), offset, dtype=mx.int32)
-        elif isinstance(offset, list):
-            rope_offsets = mx.array(offset, dtype=mx.int32)
-        else:
-            rope_offsets = offset
+        # Q and K in every layer share this normalized offset array.
+        rope_offsets = (
+            mx.contiguous(normalize_rope_offsets(offset, inputs.shape[0]))
+            if self.use_fast_rope
+            else offset
+        )
 
         for layer, layer_cache in zip(self.layers_inner, cache):
             hidden_states = layer(
