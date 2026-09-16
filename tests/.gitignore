@@ -1,3 +1,1 @@
 test_*.py
-!test_week_2_rope_kernels.py
-!test_week_2_swiglu_kernels.py

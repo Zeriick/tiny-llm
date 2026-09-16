@@ -145,4 +145,4 @@ instantiate_kernel("week2_swiglu_f32", week2_swiglu, float);
 instantiate_kernel("week2_swiglu_f16", week2_swiglu, half);
 instantiate_kernel("week2_swiglu_bf16", week2_swiglu, bfloat16_t);
 
-// Week 2, Day 5 adds week2_decode_attention.
+// Week 2, Day 6 adds week2_decode_attention.

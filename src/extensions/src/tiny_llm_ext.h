@@ -214,7 +214,7 @@ public:
     const char* name() const override { return "Week2SwiGLU"; }
 };
 
-// Week 2, Day 5.
+// Week 2, Day 6: implement online-softmax decode attention.
 mx::array decode_attention(
     const mx::array& q,
     const mx::array& k,

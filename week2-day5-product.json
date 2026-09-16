@@ -1,0 +1,128 @@
+{
+  "schema_version": 2,
+  "source": {
+    "commit": "2686dc2ce28761a68ba48b87c9edc7dbbfb486eb",
+    "tree": "714764beffcecdf3a0468d97e348d5d893aa7845",
+    "tracked_dirty": true
+  },
+  "host": {
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "python_version": "3.12.12",
+    "mlx_version": "0.32.0",
+    "hardware": {
+      "machine_name": "MacBook Pro",
+      "machine_model": "Mac16,1",
+      "chip_type": "Apple M4",
+      "cpu_cores": "proc 10:0:4:6",
+      "gpu_model": "Apple M4",
+      "gpu_cores": "10",
+      "physical_memory": "24 GB"
+    }
+  },
+  "workload": {
+    "model": "qwen3-4b",
+    "input_tokens": 128,
+    "output_tokens": 129,
+    "seed": 0,
+    "prompt_rule": "synthetic-token-ids",
+    "prefill_logits": "last",
+    "warmup": 2,
+    "repeats": 2
+  },
+  "workload_id": "df0abbe7755e578a7cb6a31ee8b0acfa83ffc6c4f2b574cc44eca6f11ffae6fc",
+  "configuration": {
+    "model": "qwen3-4b",
+    "solution": "tiny_llm",
+    "suite": "week2",
+    "device": "gpu",
+    "input_len": 128,
+    "output_len": 129,
+    "warmup": 2,
+    "repeats": 2,
+    "seed": 0,
+    "prefill_logits": "last",
+    "offline": true,
+    "cooldown_seconds": 0.0,
+    "variants": [
+      "week2-swiglu",
+      "week2-simd-matmul",
+      "mlx"
+    ]
+  },
+  "execution_order": [
+    [
+      "week2-swiglu",
+      "week2-simd-matmul",
+      "mlx"
+    ],
+    [
+      "mlx",
+      "week2-simd-matmul",
+      "week2-swiglu"
+    ]
+  ],
+  "results": {
+    "week2-swiglu": {
+      "label": "2.4 + Fused SwiGLU",
+      "samples": [
+        {
+          "prefill": 52.41,
+          "decode": 35.7,
+          "output": 21.4
+        },
+        {
+          "prefill": 52.22,
+          "decode": 34.6,
+          "output": 20.97
+        }
+      ],
+      "median": {
+        "prefill": 52.315,
+        "decode": 35.150000000000006,
+        "output": 21.185
+      }
+    },
+    "week2-simd-matmul": {
+      "label": "2.5 SIMD matrix prefill",
+      "samples": [
+        {
+          "prefill": 405.28,
+          "decode": 35.84,
+          "output": 33.18
+        },
+        {
+          "prefill": 406.16,
+          "decode": 35.8,
+          "output": 33.15
+        }
+      ],
+      "median": {
+        "prefill": 405.72,
+        "decode": 35.82,
+        "output": 33.165
+      }
+    },
+    "mlx": {
+      "label": "MLX",
+      "samples": [
+        {
+          "prefill": 425.98,
+          "decode": 42.33,
+          "output": 38.8
+        },
+        {
+          "prefill": 425.82,
+          "decode": 41.99,
+          "output": 38.52
+        }
+      ],
+      "median": {
+        "prefill": 425.9,
+        "decode": 42.16,
+        "output": 38.66
+      }
+    }
+  }
+}

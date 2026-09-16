@@ -294,27 +294,27 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
         throw std::runtime_error("quantized_matmul: scales and biases must be row contiguous on GPU");
     }
 
-    const int64_t k = static_cast<int64_t>(a.shape().back());
-    const int64_t m = static_cast<int64_t>(a.size() / k);
-    const int64_t n = static_cast<int64_t>(out.shape().back());
+    const int64_t N = static_cast<int64_t>(a.shape().back());
+    const int64_t M = static_cast<int64_t>(a.size() / N);
+    const int64_t K = static_cast<int64_t>(out.shape().back());
 
     const int packs_per_word = 32 / bits_;
-    if (k % group_size_ != 0 || k % packs_per_word != 0) {
-        throw std::runtime_error("quantized_matmul: invalid k for GPU kernel");
+    if (N % group_size_ != 0 || N % packs_per_word != 0) {
+        throw std::runtime_error("quantized_matmul: invalid N for GPU kernel");
     }
-    if (static_cast<int64_t>(scales.shape()[0]) != n ||
-        static_cast<int64_t>(scales.shape()[1]) != k / group_size_) {
+    if (static_cast<int64_t>(scales.shape()[0]) != K ||
+        static_cast<int64_t>(scales.shape()[1]) != N / group_size_) {
         throw std::runtime_error("quantized_matmul: invalid scales shape for GPU kernel");
     }
 
-    const int64_t expected_b0 = transpose_b_ ? n : (k / packs_per_word);
-    const int64_t expected_b1 = transpose_b_ ? (k / packs_per_word) : n;
+    const int64_t expected_b0 = transpose_b_ ? K : (N / packs_per_word);
+    const int64_t expected_b1 = transpose_b_ ? (N / packs_per_word) : K;
     if (static_cast<int64_t>(b.shape()[0]) != expected_b0 || static_cast<int64_t>(b.shape()[1]) != expected_b1) {
         throw std::runtime_error("quantized_matmul: invalid b shape for GPU kernel");
     }
 
-    if (m > std::numeric_limits<int>::max() || k > std::numeric_limits<int>::max() ||
-        n > std::numeric_limits<int>::max()) {
+    if (M > std::numeric_limits<int>::max() || N > std::numeric_limits<int>::max() ||
+        K > std::numeric_limits<int>::max()) {
         throw std::runtime_error("quantized_matmul: dimensions exceed GPU kernel int range");
     }
 
@@ -330,11 +330,15 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
         throw std::runtime_error("quantized_matmul: split-K is introduced on Week 2 Day 7");
     }
 
-    const bool use_matvec = use_simdgroup_ && m <= 8;
+    const bool use_matvec = use_simdgroup_ && M <= 8;
+    const bool use_tiled_matmul = use_simdgroup_ && M > 8;
     const bool is_f16 = a.dtype() == mx::float16;
     const char* kernel_name = use_matvec
         ? (is_f16 ? "quantized_matvec_x4_fast_w4a16_g128_f16"
                   : "quantized_matvec_x4_fast_w4a16_g128_bf16")
+        : use_tiled_matmul
+        ? (is_f16 ? "quantized_matmul_simdgroup_w4a16_g128_f16"
+                  : "quantized_matmul_simdgroup_w4a16_g128_bf16")
         : (is_f16 ? "quantized_matmul_vanilla_w4a16_g128_f16"
                   : "quantized_matmul_vanilla_w4a16_g128_bf16");
     auto kernel = d.get_kernel(kernel_name, library);
@@ -348,12 +352,12 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
     compute_encoder.set_input_array(b, 3);
     compute_encoder.set_output_array(out, 4);
 
-    const int m_i = static_cast<int>(m);
-    const int k_i = static_cast<int>(k);
-    const int n_i = static_cast<int>(n);
-    compute_encoder.set_bytes(m_i, 5);
-    compute_encoder.set_bytes(k_i, 6);
-    compute_encoder.set_bytes(n_i, 7);
+    const int M_i = static_cast<int>(M);
+    const int N_i = static_cast<int>(N);
+    const int K_i = static_cast<int>(K);
+    compute_encoder.set_bytes(M_i, 5);
+    compute_encoder.set_bytes(N_i, 6);
+    compute_encoder.set_bytes(K_i, 7);
 
     if (use_matvec) {
         constexpr int outputs_per_simdgroup = 4;
@@ -361,19 +365,28 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
         constexpr int outputs_per_threadgroup =
             outputs_per_simdgroup * simdgroups_per_threadgroup;
         const int column_tiles =
-            (static_cast<int>(n) + outputs_per_threadgroup - 1) /
+            (static_cast<int>(K) + outputs_per_threadgroup - 1) /
             outputs_per_threadgroup;
         compute_encoder.dispatch_threadgroups(
-            MTL::Size(static_cast<size_t>(m) * column_tiles, 1, 1),
+            MTL::Size(static_cast<size_t>(M) * column_tiles, 1, 1),
+            MTL::Size(simdgroups_per_threadgroup * 32, 1, 1));
+        return;
+    }
+
+    if (use_tiled_matmul) {
+        constexpr int tile_size = 32;
+        constexpr int simdgroups_per_threadgroup = 4;
+        compute_encoder.dispatch_threadgroups(
+            MTL::Size((K + tile_size - 1) / tile_size, (M + tile_size - 1) / tile_size, 1),
             MTL::Size(simdgroups_per_threadgroup * 32, 1, 1));
         return;
     }
 
     const size_t tgp_size = kernel->maxTotalThreadsPerThreadgroup();
-    const int x_size = m <= 16 ? 16 : 32;
+    const int x_size = M <= 16 ? 16 : 32;
     const int y_size = static_cast<int>(tgp_size) / x_size;
     compute_encoder.dispatch_threadgroups(
-        MTL::Size((m + x_size - 1) / x_size, (n + y_size - 1) / y_size, 1),
+        MTL::Size((M + x_size - 1) / x_size, (K + y_size - 1) / y_size, 1),
         MTL::Size(x_size, y_size, 1));
 }
 

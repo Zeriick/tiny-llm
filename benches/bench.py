@@ -89,11 +89,11 @@ def parse_args() -> argparse.Namespace:
         choices=(
             "kv-cache",
             "quantized-matvec",
-            "decode-attention",
             "rmsnorm",
             "rope",
             "swiglu",
             "simd-matmul",
+            "decode-attention",
             "split-k",
         ),
         help="run one cumulative Week 2 end-to-end checkpoint",

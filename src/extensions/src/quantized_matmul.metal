@@ -1,6 +1,7 @@
 #include <metal_stdlib>
 
 #include "mlx/backend/metal/kernels/utils.h"
+#include "cooperative_matrix.h"
 
 template <typename T>
 [[kernel]] void quantized_matmul_vanilla_w4a16_g128(
@@ -146,6 +147,94 @@ template <typename T>
   }
 }
 
+// M prompt rows, N reduction values, K output columns (the existing ABI).
+// Four SIMD groups reuse each pair of 32x32 operand tiles. Weight storage stays
+// row-major [output, reduction]; the fragment loader supplies its transposed view.
+template <typename T>
+[[kernel]] void quantized_matmul_simdgroup_w4a16_g128(
+    device const T* scales [[buffer(0)]],
+    device const T* biases [[buffer(1)]],
+    device const T* a [[buffer(2)]],
+    device const uint32_t* b [[buffer(3)]],
+    device T* out [[buffer(4)]],
+    constant const int& M [[buffer(5)]],
+    constant const int& N [[buffer(6)]],
+    constant const int& K [[buffer(7)]],
+    uint2 tile [[threadgroup_position_in_grid]],
+    uint thread_id [[thread_index_in_threadgroup]],
+    ushort simdgroup [[simdgroup_index_in_threadgroup]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+  constexpr int tile_size = 32;
+  constexpr int tile_stride = 40;  // Pad shared rows to avoid bank conflicts.
+  constexpr int group_size = 128;
+  constexpr int values_per_word = 8;
+  constexpr int words_per_tile_row = tile_size / values_per_word;
+  const int row_base = int(tile.y) * tile_size;
+  const int column_base = int(tile.x) * tile_size;
+  const int valid_rows = min(tile_size, M - row_base);
+  const int valid_columns = min(tile_size, K - column_base);
+  const int packed_cols = N / values_per_word;
+  const int groups_per_row = N / group_size;
+
+  threadgroup T activation_tile[tile_size * tile_stride];
+  threadgroup T weight_tile[tile_size * tile_stride];
+  threadgroup T group_scales[tile_size];
+  threadgroup T group_biases[tile_size];
+  using ActivationLoader = tiny_llm::CooperativeTileLoader<
+      T, tile_size, tile_size, tile_stride, 128, false, true>;
+  tiny_llm::CooperativeBlockMMA<T, T, tile_stride> mma(simdgroup, lane);
+
+  // Four consecutive threads unpack the four uint32 words for one weight row.
+  const int weight_row = int(thread_id) / words_per_tile_row;
+  const int weight_column = (int(thread_id) % words_per_tile_row) * values_per_word;
+  const int output_column = column_base + weight_row;
+
+  for (int group = 0; group < groups_per_row; ++group) {
+    // One parameter pair per output column, reused for four 32-value slices.
+    if (thread_id < tile_size) {
+      const int column = column_base + int(thread_id);
+      const int parameter = column * groups_per_row + group;
+      group_scales[thread_id] = column < K ? scales[parameter] : T(0);
+      group_biases[thread_id] = column < K ? biases[parameter] : T(0);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    const float scale = float(group_scales[weight_row]);
+    const float bias = float(group_biases[weight_row]);
+
+    // N is divisible by 128, so every reduction slice is a full 32 values.
+    for (int slice = 0; slice < group_size; slice += tile_size) {
+      const int reduction = group * group_size + slice;
+      ActivationLoader::load(a + row_base * N + reduction, N,
+                             activation_tile, thread_id, valid_rows, tile_size);
+      const uint32_t packed = output_column < K
+          ? b[output_column * packed_cols + (reduction + weight_column) / values_per_word]
+          : 0;
+      #pragma unroll
+      for (int value = 0; value < values_per_word; ++value) {
+        const float code = float((packed >> (4 * value)) & 0xf);
+        weight_tile[weight_row * tile_stride + weight_column + value] =
+            T(code * scale + bias);
+      }
+      // All 128 threads finish loading before any SIMD group reads fragments.
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      mma.multiply_accumulate(activation_tile, weight_tile);
+      // All four groups finish reading before the next slice overwrites tiles.
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+  }
+
+  mma.store_result_safe(out + row_base * K + column_base, K,
+                        short2(valid_columns, valid_rows));
+}
+
+instantiate_kernel(
+    "quantized_matmul_simdgroup_w4a16_g128_f16",
+    quantized_matmul_simdgroup_w4a16_g128,
+    half);
+instantiate_kernel(
+    "quantized_matmul_simdgroup_w4a16_g128_bf16",
+    quantized_matmul_simdgroup_w4a16_g128,
+    bfloat16_t);
 instantiate_kernel(
     "quantized_matmul_vanilla_w4a16_g128_f16",
     quantized_matmul_vanilla_w4a16_g128,
@@ -168,7 +257,7 @@ instantiate_kernel(
 // Week 2, Day 3:
 //   quantized_matmul_vanilla_w4a16_g128
 //   quantized_matvec_x4_fast_w4a16_g128
-// Week 2, Day 6:
+// Week 2, Day 5:
 //   quantized_matmul_simdgroup_w4a16_g128
 // Week 2, Day 7:
 //   quantized_matmul_simdgroup_splitk_w4a16_g128
