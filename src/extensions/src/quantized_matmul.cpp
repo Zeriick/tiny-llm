@@ -2,6 +2,7 @@
 
 #include "tiny_llm_ext.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -326,21 +327,36 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
     if (!transpose_b_) {
         throw std::runtime_error("quantized_matmul: GPU requires transpose_b=True");
     }
-    if (use_split_k_) {
-        throw std::runtime_error("quantized_matmul: split-K is introduced on Week 2 Day 7");
-    }
-
     const bool use_matvec = use_simdgroup_ && M <= 8;
     const bool use_tiled_matmul = use_simdgroup_ && M > 8;
+    int split_k = 1;
+    if (use_split_k_ && use_tiled_matmul && K > 0) {
+        // Fill a small output grid with at most eight partitions. Count whole
+        // quantization groups, not individual reduction values: each partition
+        // owns at least one group, including when the group count is uneven.
+        constexpr int64_t target_threadgroups = 128;
+        constexpr int64_t max_splits = 8;
+        const int64_t output_tiles = ((M + 31) / 32) * ((K + 31) / 32);
+        split_k = static_cast<int>(std::min({
+            max_splits, std::max(int64_t(1), target_threadgroups / output_tiles), N / 128}));
+    }
+
     const bool is_f16 = a.dtype() == mx::float16;
-    const char* kernel_name = use_matvec
-        ? (is_f16 ? "quantized_matvec_x4_fast_w4a16_g128_f16"
-                  : "quantized_matvec_x4_fast_w4a16_g128_bf16")
-        : use_tiled_matmul
-        ? (is_f16 ? "quantized_matmul_simdgroup_w4a16_g128_f16"
-                  : "quantized_matmul_simdgroup_w4a16_g128_bf16")
-        : (is_f16 ? "quantized_matmul_vanilla_w4a16_g128_f16"
-                  : "quantized_matmul_vanilla_w4a16_g128_bf16");
+    const char* kernel_name;
+    if (use_matvec) {
+        kernel_name = is_f16 ? "quantized_matvec_x4_fast_w4a16_g128_f16"
+                             : "quantized_matvec_x4_fast_w4a16_g128_bf16";
+    } else if (split_k > 1) {
+        kernel_name = is_f16 ? "quantized_matmul_simdgroup_splitk_w4a16_g128_f16"
+                             : "quantized_matmul_simdgroup_splitk_w4a16_g128_bf16";
+    } else if (use_tiled_matmul) {
+        // A one-partition request uses exactly the Day 5 kernel and dispatch.
+        kernel_name = is_f16 ? "quantized_matmul_simdgroup_w4a16_g128_f16"
+                             : "quantized_matmul_simdgroup_w4a16_g128_bf16";
+    } else {
+        kernel_name = is_f16 ? "quantized_matmul_vanilla_w4a16_g128_f16"
+                             : "quantized_matmul_vanilla_w4a16_g128_bf16";
+    }
     auto kernel = d.get_kernel(kernel_name, library);
 
     auto& compute_encoder = mx::metal::get_command_encoder(s);
@@ -350,7 +366,6 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
     compute_encoder.set_input_array(biases, 1);
     compute_encoder.set_input_array(a, 2);
     compute_encoder.set_input_array(b, 3);
-    compute_encoder.set_output_array(out, 4);
 
     const int M_i = static_cast<int>(M);
     const int N_i = static_cast<int>(N);
@@ -358,6 +373,36 @@ void QuantizedMatmul::eval_gpu(const std::vector<mx::array>& inputs, std::vector
     compute_encoder.set_bytes(M_i, 5);
     compute_encoder.set_bytes(N_i, 6);
     compute_encoder.set_bytes(K_i, 7);
+
+    if (split_k > 1) {
+        // Plane p occupies [p*M*K, (p+1)*M*K). Keep these planes in FP32 and
+        // retain the buffer until both GPU dispatches have completed.
+        mx::array partials({split_k, M_i, K_i}, mx::float32, nullptr, {});
+        partials.set_data(mx::allocator::malloc(partials.nbytes()));
+        compute_encoder.add_temporary(partials);
+        compute_encoder.set_output_array(partials, 4);
+        compute_encoder.set_bytes(split_k, 8);
+        compute_encoder.dispatch_threadgroups(
+            MTL::Size((K + 31) / 32, (M + 31) / 32, split_k),
+            MTL::Size(128, 1, 1));
+
+        const char* reduce_name = is_f16 ? "quantized_matmul_splitk_reduce_f16"
+                                          : "quantized_matmul_splitk_reduce_bf16";
+        auto reduce_kernel = d.get_kernel(reduce_name, library);
+        compute_encoder.set_compute_pipeline_state(reduce_kernel);
+        // Registering the preceding output as an input makes the encoder
+        // synchronize the partial writes before the reduction reads them.
+        compute_encoder.set_input_array(partials, 0);
+        compute_encoder.set_output_array(out, 1);
+        compute_encoder.set_bytes(M_i, 2);
+        compute_encoder.set_bytes(K_i, 3);
+        compute_encoder.set_bytes(split_k, 4);
+        const size_t threads = std::min<size_t>(256, reduce_kernel->maxTotalThreadsPerThreadgroup());
+        compute_encoder.dispatch_threads(MTL::Size(K, M, 1), MTL::Size(threads, 1, 1));
+        return;
+    }
+
+    compute_encoder.set_output_array(out, 4);
 
     if (use_matvec) {
         constexpr int outputs_per_simdgroup = 4;

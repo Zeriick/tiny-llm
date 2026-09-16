@@ -150,20 +150,25 @@ template <typename T>
 // M prompt rows, N reduction values, K output columns (the existing ABI).
 // Four SIMD groups reuse each pair of 32x32 operand tiles. Weight storage stays
 // row-major [output, reduction]; the fragment loader supplies its transposed view.
-template <typename T>
-[[kernel]] void quantized_matmul_simdgroup_w4a16_g128(
-    device const T* scales [[buffer(0)]],
-    device const T* biases [[buffer(1)]],
-    device const T* a [[buffer(2)]],
-    device const uint32_t* b [[buffer(3)]],
-    device T* out [[buffer(4)]],
-    constant const int& M [[buffer(5)]],
-    constant const int& N [[buffer(6)]],
-    constant const int& K [[buffer(7)]],
-    uint2 tile [[threadgroup_position_in_grid]],
-    uint thread_id [[thread_index_in_threadgroup]],
-    ushort simdgroup [[simdgroup_index_in_threadgroup]],
-    ushort lane [[thread_index_in_simdgroup]]) {
+// Both schedules use this tile. OutT is T for the unsplit output and float
+// for split partials, so partitions never round their accumulators to BF16.
+template <typename T, typename OutT>
+METAL_FUNC void quantized_matmul_tile_w4a16_g128(
+    device const T* scales,
+    device const T* biases,
+    device const T* a,
+    device const uint32_t* b,
+    device OutT* out,
+    int M, int N, int K,
+    int group_begin, int group_end,
+    threadgroup T* activation_tile,
+    threadgroup T* weight_tile,
+    threadgroup T* group_scales,
+    threadgroup T* group_biases,
+    uint2 tile,
+    uint thread_id,
+    ushort simdgroup,
+    ushort lane) {
   constexpr int tile_size = 32;
   constexpr int tile_stride = 40;  // Pad shared rows to avoid bank conflicts.
   constexpr int group_size = 128;
@@ -176,20 +181,16 @@ template <typename T>
   const int packed_cols = N / values_per_word;
   const int groups_per_row = N / group_size;
 
-  threadgroup T activation_tile[tile_size * tile_stride];
-  threadgroup T weight_tile[tile_size * tile_stride];
-  threadgroup T group_scales[tile_size];
-  threadgroup T group_biases[tile_size];
   using ActivationLoader = tiny_llm::CooperativeTileLoader<
       T, tile_size, tile_size, tile_stride, 128, false, true>;
-  tiny_llm::CooperativeBlockMMA<T, T, tile_stride> mma(simdgroup, lane);
+  tiny_llm::CooperativeBlockMMA<T, OutT, tile_stride> mma(simdgroup, lane);
 
   // Four consecutive threads unpack the four uint32 words for one weight row.
   const int weight_row = int(thread_id) / words_per_tile_row;
   const int weight_column = (int(thread_id) % words_per_tile_row) * values_per_word;
   const int output_column = column_base + weight_row;
 
-  for (int group = 0; group < groups_per_row; ++group) {
+  for (int group = group_begin; group < group_end; ++group) {
     // One parameter pair per output column, reused for four 32-value slices.
     if (thread_id < tile_size) {
       const int column = column_base + int(thread_id);
@@ -204,10 +205,10 @@ template <typename T>
     // N is divisible by 128, so every reduction slice is a full 32 values.
     for (int slice = 0; slice < group_size; slice += tile_size) {
       const int reduction = group * group_size + slice;
-      ActivationLoader::load(a + row_base * N + reduction, N,
+      ActivationLoader::load(a + size_t(row_base) * N + reduction, N,
                              activation_tile, thread_id, valid_rows, tile_size);
       const uint32_t packed = output_column < K
-          ? b[output_column * packed_cols + (reduction + weight_column) / values_per_word]
+          ? b[size_t(output_column) * packed_cols + (reduction + weight_column) / values_per_word]
           : 0;
       #pragma unroll
       for (int value = 0; value < values_per_word; ++value) {
@@ -223,10 +224,102 @@ template <typename T>
     }
   }
 
-  mma.store_result_safe(out + row_base * K + column_base, K,
+  mma.store_result_safe(out + size_t(row_base) * K + column_base, K,
                         short2(valid_columns, valid_rows));
 }
 
+template <typename T>
+[[kernel]] void quantized_matmul_simdgroup_w4a16_g128(
+    device const T* scales [[buffer(0)]],
+    device const T* biases [[buffer(1)]],
+    device const T* a [[buffer(2)]],
+    device const uint32_t* b [[buffer(3)]],
+    device T* out [[buffer(4)]],
+    constant const int& M [[buffer(5)]],
+    constant const int& N [[buffer(6)]],
+    constant const int& K [[buffer(7)]],
+    uint2 tile [[threadgroup_position_in_grid]],
+    uint thread_id [[thread_index_in_threadgroup]],
+    ushort simdgroup [[simdgroup_index_in_threadgroup]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+  threadgroup T activation_tile[32 * 40];
+  threadgroup T weight_tile[32 * 40];
+  threadgroup T group_scales[32];
+  threadgroup T group_biases[32];
+  quantized_matmul_tile_w4a16_g128(
+      scales, biases, a, b, out, M, N, K, 0, N / 128,
+      activation_tile, weight_tile, group_scales, group_biases,
+      tile, thread_id, simdgroup, lane);
+}
+
+template <typename T>
+[[kernel]] void quantized_matmul_simdgroup_splitk_w4a16_g128(
+    device const T* scales [[buffer(0)]],
+    device const T* biases [[buffer(1)]],
+    device const T* a [[buffer(2)]],
+    device const uint32_t* b [[buffer(3)]],
+    device float* partials [[buffer(4)]],
+    constant const int& M [[buffer(5)]],
+    constant const int& N [[buffer(6)]],
+    constant const int& K [[buffer(7)]],
+    constant const int& split_k [[buffer(8)]],
+    uint3 tile [[threadgroup_position_in_grid]],
+    uint thread_id [[thread_index_in_threadgroup]],
+    ushort simdgroup [[simdgroup_index_in_threadgroup]],
+    ushort lane [[thread_index_in_simdgroup]]) {
+  threadgroup T activation_tile[32 * 40];
+  threadgroup T weight_tile[32 * 40];
+  threadgroup T group_scales[32];
+  threadgroup T group_biases[32];
+  const int groups = N / 128;
+  const int partition = int(tile.z);
+  // The host guarantees 1 < split_k <= groups. Adjacent half-open intervals
+  // share a boundary, start at zero, end at groups, and contain whole groups.
+  // Multiplying either boundary by 128 gives its aligned reduction position.
+  const int group_begin = partition * groups / split_k;
+  const int group_end = (partition + 1) * groups / split_k;
+  const size_t plane_size = size_t(M) * K;
+  quantized_matmul_tile_w4a16_g128(
+      scales, biases, a, b, partials + size_t(partition) * plane_size,
+      M, N, K, group_begin, group_end,
+      activation_tile, weight_tile, group_scales, group_biases,
+      tile.xy, thread_id, simdgroup, lane);
+}
+
+template <typename T>
+[[kernel]] void quantized_matmul_splitk_reduce(
+    device const float* partials [[buffer(0)]],
+    device T* out [[buffer(1)]],
+    constant const int& M [[buffer(2)]],
+    constant const int& K [[buffer(3)]],
+    constant const int& split_k [[buffer(4)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= uint(K) || gid.y >= uint(M)) return;
+  const size_t plane_size = size_t(M) * K;
+  const size_t element = size_t(gid.y) * K + gid.x;
+  float sum = 0.0f;
+  for (int partition = 0; partition < split_k; ++partition) {
+    sum += partials[size_t(partition) * plane_size + element];
+  }
+  out[element] = T(sum);
+}
+
+instantiate_kernel(
+    "quantized_matmul_simdgroup_splitk_w4a16_g128_f16",
+    quantized_matmul_simdgroup_splitk_w4a16_g128,
+    half);
+instantiate_kernel(
+    "quantized_matmul_simdgroup_splitk_w4a16_g128_bf16",
+    quantized_matmul_simdgroup_splitk_w4a16_g128,
+    bfloat16_t);
+instantiate_kernel(
+    "quantized_matmul_splitk_reduce_f16",
+    quantized_matmul_splitk_reduce,
+    half);
+instantiate_kernel(
+    "quantized_matmul_splitk_reduce_bf16",
+    quantized_matmul_splitk_reduce,
+    bfloat16_t);
 instantiate_kernel(
     "quantized_matmul_simdgroup_w4a16_g128_f16",
     quantized_matmul_simdgroup_w4a16_g128,

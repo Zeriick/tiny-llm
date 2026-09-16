@@ -1,1 +1,2 @@
 test_*.py
+!test_week_2_split_k_kernels.py

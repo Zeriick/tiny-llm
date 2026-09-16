@@ -1,0 +1,145 @@
+{
+  "schema_version": 2,
+  "source": {
+    "commit": "7f0c68f803304f9d6e47bcee781cefcee6dbe211",
+    "tree": "5a9e372b65230dfa8ad239be89b65ea84c62dc74",
+    "tracked_dirty": true
+  },
+  "solution": "tiny_llm",
+  "model": "Qwen/Qwen3-4B-MLX-4bit",
+  "software": {
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "python": "3.12.12"
+  },
+  "host": {
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "device": {
+      "device_name": "Apple M4",
+      "max_recommended_working_set_size": 19069665280,
+      "memory_size": 25769803776,
+      "architecture": "applegpu_g16g",
+      "max_buffer_length": 14302248960,
+      "resource_limit": 499000
+    }
+  },
+  "warmup": 4,
+  "iterations": 12,
+  "profiles": [
+    {
+      "checkpoint": "simd-matmul",
+      "workload": {
+        "model": "Qwen/Qwen3-4B-MLX-4bit",
+        "phase": "prefill",
+        "tokens": 32,
+        "prompt_rule": "synthetic-token-ids",
+        "prefill_logits": "all",
+        "warmup": 4,
+        "iterations": 12
+      },
+      "workload_id": "3909cc2be0c0a219d64237b32a9ef3ff99a1164b3a1a7f705ace686ef893abce",
+      "attributed_us": 89329.60400034062,
+      "categories": [
+        {
+          "name": "projections",
+          "median_us": 83530.52099937486,
+          "share": 0.9350821817037983
+        },
+        {
+          "name": "attention",
+          "median_us": 3035.10450066824,
+          "share": 0.033976468771278405
+        },
+        {
+          "name": "normalization, position, and activation",
+          "median_us": 2763.978500297526,
+          "share": 0.0309413495249233
+        }
+      ],
+      "source": {
+        "commit": "7f0c68f803304f9d6e47bcee781cefcee6dbe211",
+        "tree": "5a9e372b65230dfa8ad239be89b65ea84c62dc74",
+        "tracked_dirty": true
+      },
+      "solution": "tiny_llm",
+      "model": "Qwen/Qwen3-4B-MLX-4bit",
+      "software": {
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "python": "3.12.12"
+      },
+      "host": {
+        "machine": "arm64",
+        "platform": "macOS-27.0-arm64-arm-64bit",
+        "device": {
+          "device_name": "Apple M4",
+          "max_recommended_working_set_size": 19069665280,
+          "memory_size": 25769803776,
+          "architecture": "applegpu_g16g",
+          "max_buffer_length": 14302248960,
+          "resource_limit": 499000
+        }
+      },
+      "warmup": 4,
+      "iterations": 12
+    },
+    {
+      "checkpoint": "split-k",
+      "workload": {
+        "model": "Qwen/Qwen3-4B-MLX-4bit",
+        "phase": "prefill",
+        "tokens": 32,
+        "prompt_rule": "synthetic-token-ids",
+        "prefill_logits": "all",
+        "warmup": 4,
+        "iterations": 12
+      },
+      "workload_id": "3909cc2be0c0a219d64237b32a9ef3ff99a1164b3a1a7f705ace686ef893abce",
+      "attributed_us": 89720.12549929786,
+      "categories": [
+        {
+          "name": "projections",
+          "median_us": 83875.83349940542,
+          "share": 0.9348608579472152
+        },
+        {
+          "name": "attention",
+          "median_us": 3048.9374994431273,
+          "share": 0.033982760082819856
+        },
+        {
+          "name": "normalization, position, and activation",
+          "median_us": 2795.3545004493208,
+          "share": 0.031156381969964998
+        }
+      ],
+      "source": {
+        "commit": "7f0c68f803304f9d6e47bcee781cefcee6dbe211",
+        "tree": "5a9e372b65230dfa8ad239be89b65ea84c62dc74",
+        "tracked_dirty": true
+      },
+      "solution": "tiny_llm",
+      "model": "Qwen/Qwen3-4B-MLX-4bit",
+      "software": {
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "python": "3.12.12"
+      },
+      "host": {
+        "machine": "arm64",
+        "platform": "macOS-27.0-arm64-arm-64bit",
+        "device": {
+          "device_name": "Apple M4",
+          "max_recommended_working_set_size": 19069665280,
+          "memory_size": 25769803776,
+          "architecture": "applegpu_g16g",
+          "max_buffer_length": 14302248960,
+          "resource_limit": 499000
+        }
+      },
+      "warmup": 4,
+      "iterations": 12
+    }
+  ]
+}

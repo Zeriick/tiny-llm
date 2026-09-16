@@ -1,0 +1,3983 @@
+{
+  "captured_at_utc": "2026-09-16T15:50:58.060224+00:00",
+  "source": {
+    "commit": "7f0c68f803304f9d6e47bcee781cefcee6dbe211",
+    "tree": "5a9e372b65230dfa8ad239be89b65ea84c62dc74",
+    "tracked_dirty": true
+  },
+  "source_sha256": {
+    "src/extensions/src/quantized_matmul.cpp": "49e917c033d44afe1fe6cec076b904fd00f8ba9b4dc0e72d7a020cd9a8c390ed",
+    "src/extensions/src/quantized_matmul.metal": "3bc9636196e7fcf1bf634ace6228f052309e36f75e05bc81ef80fea22fa07da6",
+    "src/extensions/src/cooperative_matrix.h": "655e434fb1fee4f1ba7c3a589438696991d49ba965d94731513042906066fdd5"
+  },
+  "device": {
+    "device_name": "Apple M4",
+    "max_recommended_working_set_size": 19069665280,
+    "memory_size": 25769803776,
+    "architecture": "applegpu_g16g",
+    "max_buffer_length": 14302248960,
+    "resource_limit": 499000
+  },
+  "software": {
+    "mlx": "0.32.0",
+    "mlx-lm": "0.31.3"
+  },
+  "model": "Qwen/Qwen3-4B-MLX-4bit",
+  "solution": "tiny_llm",
+  "dtype": "bfloat16",
+  "prefill_logits": "last",
+  "batch_size": 1,
+  "offset": 0,
+  "decode_attention": false,
+  "warmup_per_pass": 4,
+  "iterations_per_pass": 24,
+  "passes": 2,
+  "token_orders": [
+    [
+      32,
+      64,
+      128,
+      256,
+      512
+    ],
+    [
+      512,
+      256,
+      128,
+      64,
+      32
+    ]
+  ],
+  "policy": {
+    "target_threadgroups": 128,
+    "max_splits": 8
+  },
+  "method": "Host build + synchronized mx.eval. Fresh KV cache retained through eval. No tokenization or sampling. AB/BA implementation order; forward/reverse token sweeps. Independent projection replay uses the original profiler's last-token LM head.",
+  "dispatch": {
+    "32": [
+      {
+        "projection": "q",
+        "reduction": 2560,
+        "output_width": 4096,
+        "output_tiles": 128,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "k",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 32,
+        "splits": 4,
+        "boundaries": [
+          0,
+          640,
+          1280,
+          1920,
+          2560
+        ]
+      },
+      {
+        "projection": "v",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 32,
+        "splits": 4,
+        "boundaries": [
+          0,
+          640,
+          1280,
+          1920,
+          2560
+        ]
+      },
+      {
+        "projection": "o",
+        "reduction": 4096,
+        "output_width": 2560,
+        "output_tiles": 80,
+        "splits": 1,
+        "boundaries": [
+          0,
+          4096
+        ]
+      },
+      {
+        "projection": "gate",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 304,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "up",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 304,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "down",
+        "reduction": 9728,
+        "output_width": 2560,
+        "output_tiles": 80,
+        "splits": 1,
+        "boundaries": [
+          0,
+          9728
+        ]
+      }
+    ],
+    "64": [
+      {
+        "projection": "q",
+        "reduction": 2560,
+        "output_width": 4096,
+        "output_tiles": 256,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "k",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 64,
+        "splits": 2,
+        "boundaries": [
+          0,
+          1280,
+          2560
+        ]
+      },
+      {
+        "projection": "v",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 64,
+        "splits": 2,
+        "boundaries": [
+          0,
+          1280,
+          2560
+        ]
+      },
+      {
+        "projection": "o",
+        "reduction": 4096,
+        "output_width": 2560,
+        "output_tiles": 160,
+        "splits": 1,
+        "boundaries": [
+          0,
+          4096
+        ]
+      },
+      {
+        "projection": "gate",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 608,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "up",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 608,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "down",
+        "reduction": 9728,
+        "output_width": 2560,
+        "output_tiles": 160,
+        "splits": 1,
+        "boundaries": [
+          0,
+          9728
+        ]
+      }
+    ],
+    "128": [
+      {
+        "projection": "q",
+        "reduction": 2560,
+        "output_width": 4096,
+        "output_tiles": 512,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "k",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 128,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "v",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 128,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "o",
+        "reduction": 4096,
+        "output_width": 2560,
+        "output_tiles": 320,
+        "splits": 1,
+        "boundaries": [
+          0,
+          4096
+        ]
+      },
+      {
+        "projection": "gate",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 1216,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "up",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 1216,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "down",
+        "reduction": 9728,
+        "output_width": 2560,
+        "output_tiles": 320,
+        "splits": 1,
+        "boundaries": [
+          0,
+          9728
+        ]
+      }
+    ],
+    "256": [
+      {
+        "projection": "q",
+        "reduction": 2560,
+        "output_width": 4096,
+        "output_tiles": 1024,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "k",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 256,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "v",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 256,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "o",
+        "reduction": 4096,
+        "output_width": 2560,
+        "output_tiles": 640,
+        "splits": 1,
+        "boundaries": [
+          0,
+          4096
+        ]
+      },
+      {
+        "projection": "gate",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 2432,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "up",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 2432,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "down",
+        "reduction": 9728,
+        "output_width": 2560,
+        "output_tiles": 640,
+        "splits": 1,
+        "boundaries": [
+          0,
+          9728
+        ]
+      }
+    ],
+    "512": [
+      {
+        "projection": "q",
+        "reduction": 2560,
+        "output_width": 4096,
+        "output_tiles": 2048,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "k",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 512,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "v",
+        "reduction": 2560,
+        "output_width": 1024,
+        "output_tiles": 512,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "o",
+        "reduction": 4096,
+        "output_width": 2560,
+        "output_tiles": 1280,
+        "splits": 1,
+        "boundaries": [
+          0,
+          4096
+        ]
+      },
+      {
+        "projection": "gate",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 4864,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "up",
+        "reduction": 2560,
+        "output_width": 9728,
+        "output_tiles": 4864,
+        "splits": 1,
+        "boundaries": [
+          0,
+          2560
+        ]
+      },
+      {
+        "projection": "down",
+        "reduction": 9728,
+        "output_width": 2560,
+        "output_tiles": 1280,
+        "splits": 1,
+        "boundaries": [
+          0,
+          9728
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "32": {
+      "fallback": false,
+      "bitwise_equal_logits": false,
+      "max_abs_logit_difference": 0.5,
+      "outputs": {
+        "simd-matmul": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        },
+        "split-k": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        }
+      }
+    },
+    "64": {
+      "fallback": false,
+      "bitwise_equal_logits": false,
+      "max_abs_logit_difference": 0.40625,
+      "outputs": {
+        "simd-matmul": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        },
+        "split-k": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        }
+      }
+    },
+    "128": {
+      "fallback": true,
+      "bitwise_equal_logits": true,
+      "max_abs_logit_difference": 0.0,
+      "outputs": {
+        "simd-matmul": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        },
+        "split-k": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        }
+      }
+    },
+    "256": {
+      "fallback": true,
+      "bitwise_equal_logits": true,
+      "max_abs_logit_difference": 0.0,
+      "outputs": {
+        "simd-matmul": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        },
+        "split-k": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        }
+      }
+    },
+    "512": {
+      "fallback": true,
+      "bitwise_equal_logits": true,
+      "max_abs_logit_difference": 0.0,
+      "outputs": {
+        "simd-matmul": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        },
+        "split-k": {
+          "dtype": "mlx.core.bfloat16",
+          "shape": [
+            1,
+            1,
+            151936
+          ]
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "pass_index": 0,
+      "tokens": 32,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          92023.1669988425,
+          91457.12499957881,
+          92454.45800115704,
+          91835.12500021607,
+          91713.58299863641,
+          92016.04099871474,
+          93730.24999877089,
+          91614.95800071862,
+          91942.62500022887,
+          92730.62499778462,
+          92244.95799935539,
+          92800.9999988717,
+          91330.37499850616,
+          92502.87499889964,
+          92063.62500117393,
+          92113.87500181445,
+          92671.95799839101,
+          92903.66700224695,
+          93012.87500056787,
+          92800.45900231926,
+          92435.54199929349,
+          92650.08299917099,
+          93446.99999928707,
+          93221.37500203098
+        ],
+        "split-k": [
+          93321.66600142955,
+          92223.99999998743,
+          93502.41599895526,
+          93433.12500277534,
+          92074.3329988909,
+          92237.04200121574,
+          93408.08300112258,
+          92537.20899869222,
+          93176.66600327357,
+          92055.54200161714,
+          92337.41699790698,
+          92586.58299950184,
+          94075.41600012337,
+          94574.3330012192,
+          92284.49999864097,
+          92469.87500227988,
+          93644.45800019894,
+          93111.91599772428,
+          92643.83299887413,
+          92807.87500028964,
+          94219.62500346126,
+          92758.95799873979,
+          93708.74999876833,
+          92790.62500354485
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 92445.00000022526,
+        "split-k": 92799.25000191724
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 0.3832008239397666
+    },
+    {
+      "pass_index": 0,
+      "tokens": 32,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          101805.79100051546,
+          100218.04200005135,
+          98339.87499951036,
+          99387.54199902178,
+          100223.37500049616,
+          103176.79199943086,
+          100395.25000320282,
+          102872.12500043097,
+          101606.33399937069,
+          100729.12499890663,
+          101055.16700059525,
+          101308.74999958905,
+          102650.29199945275,
+          100347.29200197035,
+          99933.1249986426,
+          101222.79200004414,
+          99461.20899985544,
+          100420.58399994858,
+          101495.62500009779,
+          101396.41600108007,
+          102004.83399967197,
+          100665.12500270619,
+          101187.33299896121,
+          102221.37500022654
+        ],
+        "split-k": [
+          103618.20899925078,
+          101366.7080005689,
+          97932.20799838309,
+          98857.54200149677,
+          100935.16699998872,
+          101880.12500293553,
+          101639.74999886705,
+          101808.7500015099,
+          100999.20900029247,
+          104902.49999929802,
+          102154.0420006204,
+          103494.12499999744,
+          102473.24999727425,
+          102394.87500075484,
+          100650.00000031432,
+          100346.37499848031,
+          101893.49999927799,
+          101877.91600037599,
+          102163.70900161564,
+          103225.33300131909,
+          103460.62499957043,
+          102318.95800097845,
+          103908.04199778358,
+          101487.37499912386
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 101121.24999977823,
+        "split-k": 101886.81250110676
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 0.7570738112218756
+    },
+    {
+      "pass_index": 0,
+      "tokens": 64,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          175415.08299837005,
+          174952.9579974478,
+          174817.49999933527,
+          175106.99999911594,
+          174504.45799840963,
+          174653.6249993369,
+          173288.0000017758,
+          173916.70800134307,
+          173659.0830005298,
+          173176.8749996263,
+          174885.2499986242,
+          173752.12499973713,
+          174954.70799985924,
+          178837.62500059674,
+          176800.45799716027,
+          176296.24999972293,
+          175765.70800156333,
+          175076.58299655304,
+          175815.41699837544,
+          175561.04100003722,
+          176119.20799754444,
+          176671.2919998099,
+          177817.16700119432,
+          176600.37499808823
+        ],
+        "split-k": [
+          175375.3749981115,
+          175998.62499992014,
+          176365.79099780647,
+          174436.8330000725,
+          174307.87500052247,
+          174432.91599920485,
+          177817.08400070784,
+          177442.37500301097,
+          174693.6250019644,
+          175145.74999950128,
+          175457.0839984808,
+          175777.5420010148,
+          179520.2089997474,
+          176751.4579987619,
+          177331.16599993082,
+          177732.08300059196,
+          177518.8329993398,
+          178807.25000213715,
+          178729.99999963213,
+          177502.16700005694,
+          176717.2500003653,
+          179357.91600029916,
+          179155.2499998943,
+          178237.91699993308
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 175091.7914978345,
+        "split-k": 177041.31199934636
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 1.1134276968866264
+    },
+    {
+      "pass_index": 0,
+      "tokens": 64,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          188595.33299837494,
+          184262.25000075647,
+          189827.25000023493,
+          185653.95800033002,
+          187122.5830000185,
+          187818.91700200504,
+          182393.6250002589,
+          182191.8329987966,
+          187304.2909974174,
+          187432.7909972635,
+          189469.04099720996,
+          187130.37500128848,
+          185507.70799993188,
+          188684.91600005655,
+          186468.95799975027,
+          187573.0419997126,
+          188287.70899926894,
+          185154.29100079928,
+          187892.958001612,
+          188250.37500209874,
+          192120.87499909103,
+          189169.16600210243,
+          187073.79199986462,
+          187553.16600072547
+        ],
+        "split-k": [
+          189981.37499875156,
+          184827.29199968162,
+          191563.20800175308,
+          185534.12499750266,
+          190375.33300070208,
+          188390.20900122705,
+          184295.41700243135,
+          190351.41700078384,
+          192588.66699965438,
+          188932.04200139735,
+          185282.4170018721,
+          185997.7499989327,
+          184938.33300090046,
+          186332.66699907836,
+          184909.37500246218,
+          190528.2920015452,
+          186691.75000104588,
+          188699.5829991065,
+          191037.2499987716,
+          188340.7920031459,
+          188441.12499937182,
+          190067.87500256905,
+          192337.04199723434,
+          187369.7910014016
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 187492.9784989945,
+        "split-k": 188415.66700029944
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 0.4921189629028655
+    },
+    {
+      "pass_index": 0,
+      "tokens": 128,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          361501.1660003802,
+          353893.70800112374,
+          355094.50000245124,
+          356826.9159986812,
+          357691.5000012377,
+          359393.29200118664,
+          358873.8750004268,
+          362933.9590006566,
+          362185.7500002079,
+          365092.37499922165,
+          366486.49999915506,
+          365790.95799970673,
+          369035.91599912033,
+          368751.2910000805,
+          371575.41700071306,
+          370695.3750006505,
+          364388.87499753037,
+          372207.45800004806,
+          420131.87499833293,
+          559282.9999986861,
+          577216.7499999341,
+          574952.2500009334,
+          580272.0419997058,
+          568479.3340005854
+        ],
+        "split-k": [
+          353274.87500035204,
+          352902.5409989117,
+          355251.04100088356,
+          356156.45900179516,
+          360488.49999860977,
+          358385.70799751324,
+          359502.3339985346,
+          360665.50000032294,
+          363776.5829989803,
+          366271.5419995948,
+          363468.6659970612,
+          371269.6250004228,
+          373242.2499997483,
+          373924.9579994066,
+          367821.2919985526,
+          365633.79200015333,
+          364984.3749990396,
+          368661.62499791244,
+          650494.2499996105,
+          554400.4590010445,
+          570598.1249993783,
+          573069.9579980865,
+          570254.3330007757,
+          571958.8339998154
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 366138.7289994309,
+        "split-k": 365952.66699987405
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": -0.05081735004250909
+    },
+    {
+      "pass_index": 0,
+      "tokens": 128,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          610493.8749995199,
+          609818.58300147,
+          606019.9170024134,
+          600505.4580018623,
+          607304.8329999438,
+          607821.8340007879,
+          608532.7090004284,
+          608512.790997338,
+          609360.7500006328,
+          608182.6669978909,
+          608549.2499987595,
+          608631.4999993192,
+          607816.1250006815,
+          607958.6659980123,
+          608489.7500004445,
+          607920.3339977539,
+          608545.4170024605,
+          607246.2499978428,
+          608252.4160010507,
+          607951.7919970385,
+          608485.5409972079,
+          608290.0839974172,
+          608397.3749991856,
+          608425.916001579
+        ],
+        "split-k": [
+          608547.3330022069,
+          545010.8340010047,
+          607945.8749991318,
+          607547.2499978787,
+          607588.2500008447,
+          608916.2919997761,
+          607603.0420008465,
+          607481.5419997321,
+          607580.7500019437,
+          607845.3749978507,
+          608231.958001852,
+          608155.8330006374,
+          607963.3330009528,
+          608565.8750016592,
+          607689.7919992916,
+          608620.1250000158,
+          608298.9580027061,
+          608551.625002292,
+          608657.7089990897,
+          608157.4170020758,
+          607929.5410017949,
+          608384.4589993532,
+          608826.7500017537,
+          607522.5839995255
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 608343.7294983014,
+        "split-k": 608059.5830007951
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": -0.04670821506463918
+    },
+    {
+      "pass_index": 0,
+      "tokens": 256,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          1125387.8329989675,
+          1134377.6670000807,
+          1132617.8750023246,
+          1130136.957999639,
+          1131862.917001854,
+          1125381.2079994532,
+          1129560.3750004375,
+          1132261.5829994902,
+          1127878.833001887,
+          1021282.3750007374,
+          1140521.0830016586,
+          1140593.5840011807,
+          1133574.542000133,
+          1087751.874998503,
+          1005904.1250024165,
+          1090556.541999831,
+          1068104.5829987852,
+          1099525.1249987632,
+          1075861.6249986517,
+          1056152.666998969,
+          1070851.2499986682,
+          1061293.9579987142,
+          1090115.250000963,
+          1066733.8329985796
+        ],
+        "split-k": [
+          1129995.3750021814,
+          1126329.1249997565,
+          1131943.541997316,
+          1137518.0830000318,
+          1134614.9999990303,
+          1127781.209001114,
+          1132874.750001065,
+          1132704.7499980836,
+          1127226.7089989327,
+          1124774.3340027228,
+          1129744.2089999095,
+          1131139.6659984894,
+          1132762.8330000152,
+          1132124.1250007006,
+          1088575.6660027255,
+          1074439.8339993495,
+          1067546.9170018914,
+          1063252.1660008933,
+          1081737.9170002823,
+          1110544.667000795,
+          1091756.3750008412,
+          1113407.0419975615,
+          1067987.375001394,
+          1086065.208997752
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1112453.166499108,
+        "split-k": 1126777.9169993447
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 1.287672230312098
+    },
+    {
+      "pass_index": 0,
+      "tokens": 256,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          1248980.1250012533,
+          1238457.4169991538,
+          1245209.666001756,
+          1224333.8330008555,
+          1240422.041999409,
+          1241765.5419994844,
+          1240764.8749976943,
+          1240173.6249994428,
+          1235554.9160020018,
+          1243424.4169999147,
+          1137116.3330004492,
+          1243589.50000169,
+          1264090.666998527,
+          1112001.749999763,
+          1050687.7500010887,
+          1073618.415997771,
+          1051485.9590002743,
+          1061832.8339987784,
+          1096693.1250004563,
+          1058795.3750000452,
+          1087853.5420015396,
+          1116760.9170006472,
+          1079740.9580009116,
+          1030466.9590004778
+        ],
+        "split-k": [
+          1242480.2919995273,
+          1240961.3329982676,
+          1242188.2919989002,
+          1240848.5830019345,
+          1245861.8330019817,
+          1239569.5000013802,
+          1244087.8750021511,
+          1239158.0830008024,
+          1238441.999998031,
+          1241276.4170003356,
+          1240729.3329997628,
+          1146059.0419992513,
+          1060479.7500018321,
+          1098719.624998921,
+          1101960.6249974458,
+          1029416.79200012,
+          1137003.9159992302,
+          1086195.7500019344,
+          1078180.4170001124,
+          1058763.959001226,
+          1135630.0419975014,
+          1033106.8330015114,
+          1087053.2500011905,
+          1074492.084000667
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1180725.0830006525,
+        "split-k": 1141531.4789992408
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": -3.3194521371398777
+    },
+    {
+      "pass_index": 0,
+      "tokens": 512,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          1948950.5000019562,
+          1827333.749999525,
+          1867308.2500026794,
+          1813633.3750007907,
+          1900046.5839999379,
+          1907233.7090001383,
+          1687895.4999992857,
+          1311279.2920001084,
+          1300971.7919994728,
+          1284598.542002641,
+          1313936.915998056,
+          1336338.0419978057,
+          1356929.042001866,
+          1297132.416999375,
+          1295819.2080004665,
+          1330312.8750012547,
+          1294610.5409973825,
+          1284077.457999956,
+          1315926.4159985469,
+          1296198.583997466,
+          1283642.12499946,
+          1290127.541997208,
+          1305643.791998591,
+          1308343.791999505
+        ],
+        "split-k": [
+          1945484.6250009723,
+          1909986.4999989222,
+          1945118.3749988559,
+          1825612.208001985,
+          1840429.4579995621,
+          1859837.083000457,
+          1345872.5000018603,
+          1339031.6660006647,
+          1315110.7500016224,
+          1289140.791999671,
+          1320195.2909985266,
+          1320106.0419996793,
+          1337157.0829986013,
+          1293422.5419994618,
+          1283265.5419988441,
+          1283854.3340003525,
+          1283712.9159997858,
+          1284925.6669978786,
+          1295039.0000005427,
+          1306486.8750007008,
+          1311845.5410003662,
+          1308795.7499992626,
+          1286358.041998028,
+          1284097.7920022851
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1312608.1039990822,
+        "split-k": 1313478.1455009943
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": 0.06628341690573247
+    },
+    {
+      "pass_index": 0,
+      "tokens": 512,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          2270056.24999947,
+          2196814.7500010673,
+          2196308.874998067,
+          2278875.708001578,
+          2229706.8750012843,
+          2257338.7080010436,
+          2267946.2500018417,
+          2257672.042000195,
+          2289955.749998626,
+          2212459.583002783,
+          1950780.166000186,
+          1467301.5829976066,
+          1469182.8340000939,
+          1450549.3750002643,
+          1494899.7920000693,
+          1525125.4169997992,
+          1465828.8750033535,
+          1432525.5419971654,
+          1431692.0829987794,
+          1456806.4169980062,
+          1431943.2909978786,
+          1433177.7920015156,
+          1431752.2499986808,
+          1459555.208999518
+        ],
+        "split-k": [
+          2292015.3749983003,
+          2288994.165999611,
+          2227061.292000144,
+          2262282.7499981215,
+          2283446.8749970254,
+          2298915.584000497,
+          2279118.9999989,
+          2219375.249998848,
+          2247616.1670019794,
+          2235745.916997985,
+          1493582.7500012238,
+          1453938.916001789,
+          1434922.1249976836,
+          1433185.3330004378,
+          1475058.2080014283,
+          1459496.4579991938,
+          1445680.4169967654,
+          1434212.2500020196,
+          1477644.5000024978,
+          1434509.375001653,
+          1431065.5839981337,
+          1432514.0840010135,
+          1430125.6670005387,
+          1431416.7910015385
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1510012.6044999342,
+        "split-k": 1476351.354001963
+      },
+      "orders": [
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ]
+      ],
+      "change_percent": -2.2292032793407524
+    },
+    {
+      "pass_index": 1,
+      "tokens": 512,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          1452815.583001211,
+          1456602.4579980876,
+          2209025.1670015277,
+          2247969.8750030366,
+          2252816.25000207,
+          2324089.2920002807,
+          2388780.7079991037,
+          2322282.0420014616,
+          2224372.9590009023,
+          2224700.208997092,
+          2295544.874999905,
+          2289647.124998737,
+          2228642.75000029,
+          2291676.8340001,
+          2239576.082996791,
+          2243690.2080007712,
+          2326798.9170017242,
+          2278605.041999981,
+          2337493.0419995505,
+          2294716.833999701,
+          2210015.7090026187,
+          2295318.1249977206,
+          2264159.375001327,
+          2381369.4580021547
+        ],
+        "split-k": [
+          1425348.0840015982,
+          1460125.0830019126,
+          1508988.9580012823,
+          2305597.457998374,
+          2264529.6250011595,
+          2302646.0420005606,
+          2266096.999999718,
+          2328823.4169995124,
+          2308217.625002726,
+          2318516.749997798,
+          2325464.292000106,
+          2348726.5419971664,
+          2265704.458000982,
+          2298529.249997955,
+          2296773.417001532,
+          2332032.042002538,
+          2263940.7499991646,
+          2289837.5000004307,
+          2304950.207999354,
+          2356765.041997278,
+          2301206.082996941,
+          2268399.7500025723,
+          2336192.4170021666,
+          2223536.5839987937
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 2271382.208500654,
+        "split-k": 2299867.666497448
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 1.2541023650791683
+    },
+    {
+      "pass_index": 1,
+      "tokens": 512,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          1928074.2080009077,
+          1891042.9170027783,
+          1836037.37500016,
+          1844827.9170006572,
+          1871075.6250002305,
+          1820316.5409977373,
+          1830434.5420001482,
+          1905442.8750023362,
+          1918746.4579990774,
+          1864612.5420018507,
+          1876111.7499998363,
+          1804904.6250016545,
+          1912985.2500009292,
+          1911290.5000001774,
+          1949901.2919986853,
+          1921336.9170029182,
+          1907203.540999035,
+          1815015.0830006169,
+          1921539.5000028366,
+          1945705.7090003218,
+          1948172.083000827,
+          1924631.8340010475,
+          1889135.208002699,
+          1873217.9999969958
+        ],
+        "split-k": [
+          1932461.833999696,
+          1813780.0420008716,
+          1908559.083,
+          1898690.334001003,
+          1796450.1249989553,
+          1885591.915997793,
+          1912344.0419971303,
+          1897711.5409979888,
+          1891845.292000653,
+          1898190.4159991245,
+          1958948.6249969923,
+          1855942.7079999296,
+          1915462.8750002303,
+          1963542.1660022985,
+          1941971.2919989252,
+          1935477.9579989554,
+          1915889.584000979,
+          1936345.624999376,
+          1937562.4999993306,
+          1910696.1249999586,
+          1946449.9580026313,
+          1938623.7919970881,
+          1856069.875000685,
+          1856073.1249999662
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1898242.8960025571,
+        "split-k": 1911520.0834985445
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 0.6994461838338628
+    },
+    {
+      "pass_index": 1,
+      "tokens": 256,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          1063490.0420009217,
+          1074593.95800106,
+          1053961.249999702,
+          1079138.1670023839,
+          1109673.6250001413,
+          1074826.2499982957,
+          1064267.416997609,
+          1064989.999998943,
+          1148758.541999996,
+          1052456.0420017224,
+          1115187.6250005444,
+          1203421.2500002468,
+          1179904.5000007027,
+          1210611.1670000246,
+          1228306.6249983676,
+          1210135.249999439,
+          1178437.7499971015,
+          1183409.6669990686,
+          1168535.0410007231,
+          1135998.3749971434,
+          1027798.2910010905,
+          1092338.665999705,
+          1088223.1670002511,
+          1082656.4579983824
+        ],
+        "split-k": [
+          1102601.209000568,
+          1087494.791001518,
+          1076785.1250020612,
+          1003191.7920023261,
+          1048599.749999994,
+          1040304.4999984559,
+          1049619.666999206,
+          1098107.0419984462,
+          1059757.2079968813,
+          1065592.6250001357,
+          1065455.6669978774,
+          1196857.1249999513,
+          1212691.1249979457,
+          1158494.1250002885,
+          1177157.708996674,
+          1176997.874998051,
+          1217434.999998659,
+          1175062.3329971859,
+          1145818.2919996034,
+          1078090.874998452,
+          1076145.5410029157,
+          1048850.625000341,
+          1050885.2919992933,
+          1088311.3750023767
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 1101006.1454999233,
+        "split-k": 1082792.832999985
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": -1.6542425829665475
+    },
+    {
+      "pass_index": 1,
+      "tokens": 256,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          945662.1659992379,
+          957038.2079982664,
+          958436.624998285,
+          984080.1669997745,
+          952338.3329978969,
+          917633.5410011234,
+          983190.0839999435,
+          933215.9590012452,
+          1007255.4589969513,
+          974681.6660008335,
+          1013645.1250000391,
+          937348.6669974227,
+          918587.2910020407,
+          942835.2079994511,
+          961499.5410011034,
+          1021210.4999991425,
+          981930.8330006606,
+          929299.9999997846,
+          978175.6660013343,
+          967357.0419981843,
+          1000593.5420012975,
+          957798.4169991396,
+          974211.7919995508,
+          962366.0420002125
+        ],
+        "split-k": [
+          961123.4169969975,
+          963236.1249969108,
+          913797.1249983821,
+          918809.4999990426,
+          942202.6249994815,
+          945374.7919978923,
+          962910.9999987122,
+          966800.6669999158,
+          961468.0419981596,
+          971457.042000111,
+          986391.0419990134,
+          971201.7499987269,
+          1020248.8750001066,
+          956088.8339983649,
+          1016033.415999118,
+          1009356.4579983649,
+          973537.1249989839,
+          987861.7499998654,
+          1001858.8329985505,
+          974124.3329990539,
+          974828.2079999626,
+          1013076.5419999079,
+          970130.7920004183,
+          951697.6669983706
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 961932.7915006579,
+        "split-k": 970666.2709995726
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 0.907909531318718
+    },
+    {
+      "pass_index": 1,
+      "tokens": 128,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          547047.2080014588,
+          582710.0419992348,
+          563892.083002429,
+          549683.3329998481,
+          595623.5830017249,
+          607485.8339998173,
+          567785.3749984934,
+          563611.0420018667,
+          584312.791001139,
+          596148.9159999473,
+          542548.4160004999,
+          568806.9999996515,
+          557374.8750030063,
+          535884.0000008058,
+          539349.6249998861,
+          556371.7500008352,
+          533788.1669984199,
+          548056.2909979199,
+          537667.0000005106,
+          528687.166999589,
+          527168.2500024326,
+          573261.4170010493,
+          550525.5409989331,
+          569044.0840007795
+        ],
+        "split-k": [
+          559243.375002552,
+          589044.0000002855,
+          574463.333003223,
+          565714.874999685,
+          562865.5000000435,
+          593067.9170014628,
+          580129.9580016348,
+          539363.6250009877,
+          531865.7919997349,
+          540134.0419994085,
+          545329.5000006619,
+          552595.5839984817,
+          569622.9589993891,
+          558341.4590000757,
+          570950.6249986589,
+          566165.8339995483,
+          574796.625001909,
+          530469.0410011972,
+          565867.1669989417,
+          533587.8749974654,
+          529608.000000735,
+          605970.5830011808,
+          568043.5000031139,
+          543084.3750000349
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 556873.3125019207,
+        "split-k": 564290.1874998643
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 1.33187833416204
+    },
+    {
+      "pass_index": 1,
+      "tokens": 128,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          506198.6250002519,
+          452646.999998251,
+          469330.41699958267,
+          478342.7500005928,
+          493856.1659982952,
+          513739.20799960615,
+          477525.83300098195,
+          483509.58399896626,
+          463680.9590010671,
+          475241.8749994831,
+          475068.5409999278,
+          470390.83300114726,
+          467656.2910026405,
+          483780.33300105017,
+          463298.29200112727,
+          509963.8749998121,
+          442243.5000014957,
+          465916.0420014814,
+          469476.70900044614,
+          467524.499999854,
+          469514.9170001969,
+          496885.41700015776,
+          563280.0829989719,
+          570069.9170010921
+        ],
+        "split-k": [
+          455972.45799945085,
+          463123.2079991605,
+          445888.8750014012,
+          488888.2500017644,
+          474844.2090021854,
+          489838.20900321007,
+          476938.33299854305,
+          456755.4999994172,
+          464762.75000168243,
+          478704.54100120696,
+          470485.0409980281,
+          481179.7500005923,
+          483956.208001473,
+          494049.16699859314,
+          495802.0830017631,
+          462043.6669974879,
+          470813.9160029532,
+          493381.37499944423,
+          451870.7919996814,
+          460097.7079971926,
+          432962.99999929033,
+          476157.49999749823,
+          491400.75000104844,
+          558598.7080012274
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 475155.20799970545,
+        "split-k": 475500.8544998418
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 0.07274391489708876
+    },
+    {
+      "pass_index": 1,
+      "tokens": 64,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          323071.4170022111,
+          319723.70800212957,
+          328898.3749989711,
+          316320.12499903794,
+          301608.41699762386,
+          325210.7500011334,
+          356314.7079985356,
+          322814.99999953667,
+          297196.6250006517,
+          313290.9160012787,
+          292281.3330005738,
+          324439.3749992014,
+          290375.665997999,
+          301081.0829982802,
+          327841.66599958553,
+          306733.45800096286,
+          200327.00000228942,
+          204685.87499999558,
+          196517.79099876876,
+          201859.00000069523,
+          208377.41600189474,
+          211880.99999926635,
+          201322.00000080047,
+          197207.16699885088
+        ],
+        "split-k": [
+          342868.74999816064,
+          326058.45899888664,
+          319555.08299870417,
+          310133.41700236197,
+          312888.62499786774,
+          347399.62499952526,
+          335731.9999995525,
+          288765.6670027354,
+          286544.25000058836,
+          298927.66600096365,
+          301292.87499948987,
+          322909.45799832116,
+          310701.958998834,
+          307496.16699904436,
+          318915.95799970673,
+          242547.58399911225,
+          198656.75000255578,
+          207256.0419983347,
+          202335.5419987638,
+          206065.45799819287,
+          210301.7080007703,
+          206270.74999720207,
+          200340.33299816656,
+          198761.3749988668
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 301344.749997952,
+        "split-k": 300110.27050022676
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": -0.4096568789513144
+    },
+    {
+      "pass_index": 1,
+      "tokens": 64,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          187971.58300003503,
+          191168.08400212904,
+          195062.4169985531,
+          189601.33399741608,
+          191584.8749995348,
+          194045.37500304286,
+          277413.0830002832,
+          269183.0830008257,
+          266837.5829998695,
+          259645.70799987996,
+          261319.45800079848,
+          268340.2920010849,
+          258746.91699937102,
+          258878.16599788493,
+          264399.4579993887,
+          283887.04199824133,
+          269998.6670013459,
+          250784.16700125672,
+          268529.2079986539,
+          262729.0000018547,
+          263747.66699882457,
+          270465.16699920176,
+          246571.58400077606,
+          259197.33400223777
+        ],
+        "split-k": [
+          187316.3329983072,
+          197076.91700023133,
+          196825.83299800172,
+          196399.62499786634,
+          197534.91699884762,
+          189024.99999967404,
+          251701.3329998008,
+          280149.1669997631,
+          252960.83400098723,
+          249262.66700276756,
+          281878.2499998633,
+          255943.24999838136,
+          245326.12500115647,
+          268206.9170004979,
+          249315.08300142013,
+          260951.95800007787,
+          280094.04099793755,
+          267035.9590010776,
+          271921.66700115195,
+          279224.2920004355,
+          249602.50000003725,
+          283573.3749998326,
+          267381.62499896134,
+          268888.1249996484
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 260482.58300033922,
+        "split-k": 254452.0419996843
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": -2.315141738534998
+    },
+    {
+      "pass_index": 1,
+      "tokens": 32,
+      "phase": "full_prefill",
+      "samples_us": {
+        "simd-matmul": [
+          178611.79199826438,
+          169125.708998763,
+          165489.66700065648,
+          169078.08399992064,
+          169955.29199994053,
+          163340.2080005908,
+          171747.6669982716,
+          171037.7499985043,
+          163790.70800030604,
+          170013.45899916487,
+          174662.08300174912,
+          173275.6250021339,
+          172306.62500151084,
+          167807.33300038264,
+          173228.41699933633,
+          168217.3339977453,
+          168809.87500189804,
+          167171.58399842447,
+          169248.58399943332,
+          159845.12499926495,
+          172733.1250003772,
+          163398.37499981513,
+          174149.41700189956,
+          174063.5830028623
+        ],
+        "split-k": [
+          175943.5839994694,
+          173580.91699861689,
+          169445.4169992241,
+          172177.41700005718,
+          170905.3340018727,
+          164151.79199975682,
+          174654.49999872362,
+          170521.24999827356,
+          166177.25000105565,
+          175780.83299667924,
+          181249.7920000169,
+          175862.625001173,
+          176088.87499955017,
+          173654.9580018618,
+          168598.167001619,
+          173626.1670012027,
+          172842.62500106706,
+          172175.2919984283,
+          172379.66700122342,
+          170171.75000000861,
+          171368.49999951664,
+          181120.29199983226,
+          174061.4580012334,
+          177847.0000026573
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 169601.93799968692,
+        "split-k": 173211.77099984197
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 2.1284149478066228
+    },
+    {
+      "pass_index": 1,
+      "tokens": 32,
+      "phase": "projections",
+      "samples_us": {
+        "simd-matmul": [
+          142586.9579979917,
+          149315.75000082375,
+          156736.20799861965,
+          157409.04199992656,
+          136599.04200176243,
+          153017.33299929765,
+          150213.33299955586,
+          157193.2500010007,
+          142008.49999906495,
+          149652.8749994468,
+          148271.49999837275,
+          141703.54200177826,
+          148084.87499976764,
+          157244.95799804572,
+          141110.45800018474,
+          148487.16699998477,
+          144530.2920001268,
+          136116.62500261446,
+          150438.91700042877,
+          153401.37500243145,
+          159720.58300030767,
+          140835.4999985022,
+          156290.33300137962,
+          156730.33399798442
+        ],
+        "split-k": [
+          152906.9169991999,
+          158361.33300035726,
+          150659.83300155494,
+          150842.08400003263,
+          158005.87499688845,
+          156998.79199746647,
+          149136.50000016787,
+          152947.6670002623,
+          157704.41600034246,
+          164042.62500145705,
+          153188.5840013274,
+          158741.5840003814,
+          150806.91600087448,
+          151432.08299923572,
+          156481.20799960452,
+          161192.08300005994,
+          149305.95899932086,
+          146612.83299938077,
+          142846.5410026547,
+          154042.91600134457,
+          156546.87500136788,
+          151728.5840018303,
+          162038.87500159908,
+          147392.87499833154
+        ]
+      },
+      "medians_us": {
+        "simd-matmul": 149484.31250013527,
+        "split-k": 153068.12550079485
+      },
+      "orders": [
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ],
+        [
+          "split-k",
+          "simd-matmul"
+        ],
+        [
+          "simd-matmul",
+          "split-k"
+        ]
+      ],
+      "change_percent": 2.3974509035229685
+    }
+  ],
+  "summary": [
+    {
+      "tokens": 32,
+      "phase": "projections",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 114923.43750069267,
+        "split-k": 118710.43700193695
+      },
+      "change_percent": 3.2952368843139235,
+      "per_pass_changes": [
+        0.3832008239397666,
+        2.3974509035229685
+      ]
+    },
+    {
+      "tokens": 32,
+      "phase": "full_prefill",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 131510.9584993479,
+        "split-k": 134527.14599952742
+      },
+      "change_percent": 2.293487580500342,
+      "per_pass_changes": [
+        0.7570738112218756,
+        2.1284149478066228
+      ],
+      "tokens_per_second": {
+        "simd-matmul": 243.3257301531923,
+        "split-k": 237.87020650919342
+      }
+    },
+    {
+      "tokens": 64,
+      "phase": "projections",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 183404.60400031589,
+        "split-k": 183418.2709990273
+      },
+      "change_percent": 0.007451829677829203,
+      "per_pass_changes": [
+        1.1134276968866264,
+        -2.315141738534998
+      ]
+    },
+    {
+      "tokens": 64,
+      "phase": "full_prefill",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 194319.3329989299,
+        "split-k": 195622.70850110508
+      },
+      "change_percent": 0.670738974892604,
+      "per_pass_changes": [
+        0.4921189629028655,
+        -0.4096568789513144
+      ],
+      "tokens_per_second": {
+        "simd-matmul": 329.3547739809937,
+        "split-k": 327.1603817899212
+      }
+    },
+    {
+      "tokens": 128,
+      "phase": "projections",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 466720.2710006677,
+        "split-k": 461070.68749734026
+      },
+      "change_percent": -1.2104859922228206,
+      "per_pass_changes": [
+        -0.05081735004250909,
+        0.07274391489708876
+      ]
+    },
+    {
+      "tokens": 128,
+      "phase": "full_prefill",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 603262.6875021379,
+        "split-k": 599519.2500013218
+      },
+      "change_percent": -0.6205319139355514,
+      "per_pass_changes": [
+        -0.04670821506463918,
+        1.33187833416204
+      ],
+      "tokens_per_second": {
+        "simd-matmul": 212.17954077351484,
+        "split-k": 213.50440373635675
+      }
+    },
+    {
+      "tokens": 256,
+      "phase": "projections",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 1017427.8124995908,
+        "split-k": 1041750.5205005
+      },
+      "change_percent": 2.3906077366957046,
+      "per_pass_changes": [
+        1.287672230312098,
+        0.907909531318718
+      ]
+    },
+    {
+      "tokens": 256,
+      "phase": "full_prefill",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 1115974.2710005958,
+        "split-k": 1100340.1249981835
+      },
+      "change_percent": -1.400941438228187,
+      "per_pass_changes": [
+        -3.3194521371398777,
+        -1.6542425829665475
+      ],
+      "tokens_per_second": {
+        "simd-matmul": 229.3959696494323,
+        "split-k": 232.6553346406618
+      }
+    },
+    {
+      "tokens": 512,
+      "phase": "projections",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 1833235.958500154,
+        "split-k": 1856071.5000003255
+      },
+      "change_percent": 1.245641151336252,
+      "per_pass_changes": [
+        0.06628341690573247,
+        0.6994461838338628
+      ]
+    },
+    {
+      "tokens": 512,
+      "phase": "full_prefill",
+      "samples_per_checkpoint": 48,
+      "medians_us": {
+        "simd-matmul": 2229174.812500787,
+        "split-k": 2264235.187500162
+      },
+      "change_percent": 1.5727961218098718,
+      "per_pass_changes": [
+        -2.2292032793407524,
+        1.2541023650791683
+      ],
+      "tokens_per_second": {
+        "simd-matmul": 229.68140368749982,
+        "split-k": 226.12491971970263
+      }
+    }
+  ],
+  "source_unchanged": true
+}
