@@ -1,0 +1,7 @@
+{
+  "operator_forced_dispatches": 84,
+  "full_prefill_forced_dispatches": 3780,
+  "verified_full_prefill_variants": 18,
+  "source": "C++ eval_gpu dispatch logs, trace disabled during all timings",
+  "s1_exact_day5_logits": true
+}

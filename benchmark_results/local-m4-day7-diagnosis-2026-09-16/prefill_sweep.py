@@ -148,8 +148,12 @@ def main():
             runs = [r for r in report["runs"] if r["tokens"] == rows and r["phase"] == phase]
             samples = {name: [x for run in runs for x in run["samples_us"][name]] for name in models}
             medians = {name: median(values) for name, values in samples.items()}
+            paired_changes = [100 * (candidate / baseline - 1) for run in runs
+                              for baseline, candidate in zip(run["samples_us"]["simd-matmul"],
+                                                             run["samples_us"]["split-k"])]
             result = dict(tokens=rows, phase=phase, samples_per_checkpoint=len(next(iter(samples.values()))),
                           medians_us=medians, change_percent=100 * (medians["split-k"] / medians["simd-matmul"] - 1),
+                          median_paired_change_percent=median(paired_changes),
                           per_pass_changes=[run["change_percent"] for run in runs])
             if phase == "full_prefill":
                 result["tokens_per_second"] = {name: rows * 1e6 / value for name, value in medians.items()}

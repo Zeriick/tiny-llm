@@ -1,0 +1,60 @@
+--- a/src/extensions/src/quantized_matmul.cpp
++++ b/src/extensions/src/quantized_matmul.cpp
+@@ -4,6 +4,8 @@
+ 
+ #include <algorithm>
+ #include <cstdint>
++#include <cstdio>
++#include <cstdlib>
+ #include <iostream>
+ #include <limits>
+ #include <stdexcept>
+@@ -339,6 +341,48 @@
+         const int64_t output_tiles = ((M + 31) / 32) * ((K + 31) / 32);
+         split_k = static_cast<int>(std::min({
+             max_splits, std::max(int64_t(1), target_threadgroups / output_tiles), N / 128}));
++
++        // TEMPORARY BENCHMARK HOOK. Rules are M,N,K,S; zero dimensions are
++        // wildcards. The harness changes rules only between synchronized evals.
++        if (const char* specification = std::getenv("TINY_LLM_BENCH_SPLIT_K_RULES")) {
++            struct Rule { long long m, n, k; int splits; };
++            static thread_local std::string cached_specification;
++            static thread_local std::vector<Rule> rules;
++            if (cached_specification != specification) {
++                std::vector<Rule> parsed;
++                const char* cursor = specification;
++                while (*cursor) {
++                    Rule rule;
++                    int consumed = 0;
++                    if (std::sscanf(cursor, "%lld,%lld,%lld,%d%n",
++                                    &rule.m, &rule.n, &rule.k, &rule.splits, &consumed) != 4 ||
++                        rule.m < 0 || rule.n < 0 || rule.k < 0 || rule.splits < 1) {
++                        throw std::runtime_error("invalid benchmark split-K rule");
++                    }
++                    parsed.push_back(rule);
++                    cursor += consumed;
++                    if (*cursor == ';') ++cursor;
++                    else if (*cursor) throw std::runtime_error("invalid benchmark split-K separator");
++                }
++                rules = std::move(parsed);
++                cached_specification = specification;
++            }
++            for (const auto& rule : rules) {
++                if ((rule.m == 0 || rule.m == M) && (rule.n == 0 || rule.n == N) &&
++                    (rule.k == 0 || rule.k == K)) {
++                    if (rule.splits > N / 128) {
++                        throw std::runtime_error("benchmark split count exceeds quantization groups");
++                    }
++                    split_k = rule.splits;
++                    break;
++                }
++            }
++            if (std::getenv("TINY_LLM_BENCH_SPLIT_K_TRACE")) {
++                std::fprintf(stderr, "BENCH_SPLIT_K M=%lld N=%lld K=%lld S=%d\n",
++                             static_cast<long long>(M), static_cast<long long>(N),
++                             static_cast<long long>(K), split_k);
++            }
++        }
+     }
+ 
+     const bool is_f16 = a.dtype() == mx::float16;

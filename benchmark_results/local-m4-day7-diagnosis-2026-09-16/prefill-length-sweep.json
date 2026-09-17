@@ -3830,7 +3830,8 @@
       "per_pass_changes": [
         0.3832008239397666,
         2.3974509035229685
-      ]
+      ],
+      "median_paired_change_percent": 0.9225837554694971
     },
     {
       "tokens": 32,
@@ -3848,7 +3849,8 @@
       "tokens_per_second": {
         "simd-matmul": 243.3257301531923,
         "split-k": 237.87020650919342
-      }
+      },
+      "median_paired_change_percent": 1.475032535770826
     },
     {
       "tokens": 64,
@@ -3862,7 +3864,8 @@
       "per_pass_changes": [
         1.1134276968866264,
         -2.315141738534998
-      ]
+      ],
+      "median_paired_change_percent": 0.9156425187915929
     },
     {
       "tokens": 64,
@@ -3880,7 +3883,8 @@
       "tokens_per_second": {
         "simd-matmul": 329.3547739809937,
         "split-k": 327.1603817899212
-      }
+      },
+      "median_paired_change_percent": 0.390866581680438
     },
     {
       "tokens": 128,
@@ -3894,7 +3898,8 @@
       "per_pass_changes": [
         -0.05081735004250909,
         0.07274391489708876
-      ]
+      ],
+      "median_paired_change_percent": -0.28021585240486924
     },
     {
       "tokens": 128,
@@ -3912,7 +3917,8 @@
       "tokens_per_second": {
         "simd-matmul": 212.17954077351484,
         "split-k": 213.50440373635675
-      }
+      },
+      "median_paired_change_percent": 0.05665018328054883
     },
     {
       "tokens": 256,
@@ -3926,7 +3932,8 @@
       "per_pass_changes": [
         1.287672230312098,
         0.907909531318718
-      ]
+      ],
+      "median_paired_change_percent": 0.22820373779138814
     },
     {
       "tokens": 256,
@@ -3944,7 +3951,8 @@
       "tokens_per_second": {
         "simd-matmul": 229.3959696494323,
         "split-k": 232.6553346406618
-      }
+      },
+      "median_paired_change_percent": -0.17479854953334484
     },
     {
       "tokens": 512,
@@ -3958,7 +3966,8 @@
       "per_pass_changes": [
         0.06628341690573247,
         0.6994461838338628
-      ]
+      ],
+      "median_paired_change_percent": 0.17854068085674246
     },
     {
       "tokens": 512,
@@ -3976,7 +3985,8 @@
       "tokens_per_second": {
         "simd-matmul": 229.68140368749982,
         "split-k": 226.12491971970263
-      }
+      },
+      "median_paired_change_percent": 0.17979106179779603
     }
   ],
   "source_unchanged": true

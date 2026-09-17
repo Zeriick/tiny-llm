@@ -1,0 +1,11 @@
+{
+  "source_sha256": {
+    "src/extensions/src/quantized_matmul.cpp": "49e917c033d44afe1fe6cec076b904fd00f8ba9b4dc0e72d7a020cd9a8c390ed",
+    "src/extensions/src/quantized_matmul.metal": "3bc9636196e7fcf1bf634ace6228f052309e36f75e05bc81ef80fea22fa07da6",
+    "src/extensions/src/cooperative_matrix.h": "655e434fb1fee4f1ba7c3a589438696991d49ba965d94731513042906066fdd5"
+  },
+  "temporary_hook_removed": true,
+  "original_sources_restored_exactly": true,
+  "rebuild": "pdm run build-ext: passed",
+  "regression": "pdm run test --week 2 --day 7: 4 passed in 3.04s"
+}
