@@ -136,10 +136,11 @@ def scaled_dot_product_attention_grouped(
             # [L, S]，自动共享给所有 batch/head/group
             mask = causal_mask(l, s, query.dtype)
         else:
-            # 用户传入的是 [..., H_q, L, S]
-            # 此时才需要 H_q -> H × G
+            # 用户传入的是可广播到 [..., H_q, L, S] 的 mask。
+            # 先广播到完整 head 形状，再从 H_q -> H × G reshape。
+            mask = mx.broadcast_to(mask, (*batch_shape, h_q, l, s))
             mask = mask.reshape(
-                *mask.shape[:-3],
+                *batch_shape,
                 h,
                 group_size,
                 l,

@@ -3,6 +3,8 @@ from typing import Optional
 
 import mlx.core as mx
 
+from .attention import causal_mask
+
 
 class TinyKvCache(ABC):
     @abstractmethod
@@ -48,10 +50,40 @@ class TinyKvCache(ABC):
         pass
 
 
+# S = max(S_i across active requests)
+# L = mask_length (input parameter)
+# request_keys: H, S_i, D
+# request_values: H, S_i, D
+# batched_keys: B, H, S, D
+# batched_values: B, H, S, D
+# mask: B, 1, L, S
+
 class BatchingKvCache(TinyKvCache):
     def __init__(self, max_active_requests: int, max_seq_len: int | None = None):
         self.max_active_requests = max_active_requests
         self.max_seq_len = max_seq_len
+        self.kv_caches: list[TinyKvCache | None] = [None] * max_active_requests
+        self.HD: tuple[int, int] | None = None
+        self.last_batch_bytes = 0
+        self.staging_copy_bytes = 0
+
+    def _update_head_dim(self, H: int, D: int):
+        if self.HD is None:
+            self.HD = (H, D)
+        elif self.HD != (H, D):
+            raise ValueError(f"expect {self.HD} but got {(H, D)}")
+
+    @staticmethod
+    def _prefilled_head_dim(prefilled: TinyKvCache) -> tuple[int, int] | None:
+        if not isinstance(prefilled, TinyKvFullCache):
+            return None
+        key_values = prefilled.key_values
+        if key_values is None:
+            return None
+        keys, _ = key_values
+        if keys.ndim != 4 or keys.shape[0] != 1:
+            raise ValueError("prefilled cache must have shape [1, H, S, D]")
+        return keys.shape[1], keys.shape[3]
 
     def update_and_fetch(
         self,
@@ -60,7 +92,73 @@ class BatchingKvCache(TinyKvCache):
         mask_length: int | None = None,
         mask: mx.array | str | None = None,
     ) -> tuple[mx.array, mx.array, int, Optional[mx.array]]:
-        pass
+        if keys.ndim != 4 or values.ndim != 4:
+            raise ValueError("batched K/V chunks must be 4D [B, H, S, D]")
+        if keys.shape != values.shape:
+            raise ValueError("batched K/V chunks must have the same shape")
+
+        B, H, S, D = keys.shape
+        if B != self.max_active_requests:
+            raise ValueError(
+                f"expected batch size {self.max_active_requests}, got {B}"
+            )
+        self._update_head_dim(H, D)
+
+        if mask_length is None:
+            mask_length = S
+        if mask_length < 0:
+            raise ValueError("mask_length must be nonnegative")
+
+        # Step 1: append this decode/prefill chunk into each active slot's
+        # request-scoped cache, then collect the full per-request K/V.
+        data: list[tuple[mx.array, mx.array, int] | None] = []
+        for b in range(B):
+            cache = self.kv_caches[b]
+            if cache is None:
+                data.append(None)
+                continue
+            new_keys, new_values, request_length, _ = cache.update_and_fetch(
+                keys[b : b + 1],
+                values[b : b + 1],
+            )
+            data.append((new_keys[0], new_values[0], request_length))
+
+        # Step 2: dense batch length is the longest active request.
+        batch_length = max(
+            (request_length for item in data if item is not None for request_length in [item[2]]),
+            default=0,
+        )
+        batched_keys = mx.zeros((B, H, batch_length, D), dtype=keys.dtype)
+        batched_values = mx.zeros((B, H, batch_length, D), dtype=keys.dtype)
+
+        # Start fully masked; active requests fill only their right-aligned
+        # cache interval with a causal mask.
+        batched_mask = mx.full(
+            (B, 1, mask_length, batch_length), -mx.inf, dtype=keys.dtype
+        )
+
+        for b, item in enumerate(data):
+            if item is None:
+                continue
+            new_keys, new_values, request_length = item
+            start = batch_length - request_length
+            batched_keys[b, :, start:, :] = new_keys
+            batched_values[b, :, start:, :] = new_values
+
+            if mask is None or (isinstance(mask, str) and mask == "causal"):
+                batched_mask[b, :, 0:mask_length, start:] = causal_mask(
+                    mask_length, request_length, dtype=keys.dtype
+                )
+            elif isinstance(mask, mx.array):
+                batched_mask[b, :, 0:mask_length, start:] = mask
+            else:
+                raise ValueError(f"unsupported attention mask: {mask!r}")
+
+        self.last_batch_bytes = batched_keys.nbytes + batched_values.nbytes
+        self.staging_copy_bytes = sum(
+            item[0].nbytes + item[1].nbytes for item in data if item is not None
+        )
+        return batched_keys, batched_values, None, batched_mask
 
     def update_and_fetch_paged(
         self,
@@ -69,21 +167,93 @@ class BatchingKvCache(TinyKvCache):
         mask_length: int | None = None,
         mask: mx.array | str | None = None,
     ) -> "PagedKvMetadata":
-        pass
+        from .paged_kv_cache import PagedKvMetadata, TinyKvPagedCache
+
+        if keys.shape != values.shape:
+            raise ValueError("batched K/V chunks must have the same shape")
+        B, H, S, D = keys.shape
+        if B != self.max_active_requests:
+            raise ValueError(
+                f"expected batch size {self.max_active_requests}, got {B}"
+            )
+
+        # All active slots in one layer must share the same physical pool.
+        pool = None
+        for cache in self.kv_caches:
+            if cache is None:
+                continue
+            if not isinstance(cache, TinyKvPagedCache):
+                raise ValueError("paged batch requires TinyKvPagedCache slots")
+            if pool is None:
+                pool = cache.pool
+            elif pool is not cache.pool:
+                raise ValueError("paged batch slots must share one layer pool")
+        if pool is None:
+            raise ValueError("cannot build paged metadata without active requests")
+
+        # Snapshot mutable state so one failing slot does not leave the other
+        # slots half-appended.
+        pool_state = pool._snapshot_state()
+        cache_states = [
+            (cache, list(cache.page_ids), list(cache.page_lens), cache.offset)
+            for cache in self.kv_caches
+            if cache is not None
+        ]
+        try:
+            for b, cache in enumerate(self.kv_caches):
+                if cache is not None:
+                    cache.update_and_fetch_paged(keys[b : b + 1], values[b : b + 1])
+        except Exception:
+            pool._restore_state(pool_state)
+            for cache, page_ids, page_lens, offset in cache_states:
+                cache.page_ids = page_ids
+                cache.page_lens = page_lens
+                cache.offset = offset
+            raise
+
+        max_pages = max(
+            (cache.num_pages for cache in self.kv_caches if cache is not None),
+            default=0,
+        )
+        rows = []
+        context_lens = []
+        for cache in self.kv_caches:
+            if cache is None:
+                rows.append([-1] * max_pages)
+                context_lens.append(0)
+            else:
+                rows.append(cache.page_ids + [-1] * (max_pages - cache.num_pages))
+                context_lens.append(cache.offset)
+
+        return PagedKvMetadata(
+            key_pages=pool.key_pages,
+            value_pages=pool.value_pages,
+            block_table=mx.array(rows, dtype=mx.int32),
+            context_lens=mx.array(context_lens, dtype=mx.int32),
+            page_size=pool.page_size,
+            mask=mask,
+        )
 
     def add_request(self, prefilled: TinyKvCache, id: int):
-        pass
+        if not isinstance(id, int) or isinstance(id, bool) or not 0 <= id < self.max_active_requests:
+            raise ValueError(f"Request id {id} is out of range")
+        head_dim = self._prefilled_head_dim(prefilled)
+        if head_dim is not None:
+            self._update_head_dim(*head_dim)
+        self.kv_caches[id] = prefilled
 
     def remove_request(self, id: int):
-        pass
+        if not isinstance(id, int) or isinstance(id, bool) or not 0 <= id < self.max_active_requests:
+            raise ValueError(f"Request id {id} is out of range")
+        if self.kv_caches[id] is None:
+            raise ValueError(f"Request id {id} is not in the cache")
+        self.kv_caches[id].release()
+        self.kv_caches[id] = None
 
 
 class TinyKvFullCache(TinyKvCache):
     def __init__(self):
         self.key_values = None
-        self.offset = 0
-        self.keys : mx.array | None = None
-        self.values : mx.array | None = None
         self.offset = 0
 
     def update_and_fetch(
@@ -93,26 +263,34 @@ class TinyKvFullCache(TinyKvCache):
         mask_length: int | None = None,
         mask: mx.array | str | None = None,
     ) -> tuple[mx.array, mx.array, int, Optional[mx.array]]:
-        if self.keys is None:
-            self.keys = key
-            self.values = value
-        else:
-            self.keys = mx.concatenate(
-                [self.keys, key],
-                axis=-2,
-            )
-            self.values = mx.concatenate(
-                [self.values, value],
-                axis=-2,
-            )
+        
+        if self.key_values is None:
+            self.key_values = (key, value)
+            self.offset = key.shape[-2]
+            return key, value, self.offset, mask
 
+        prev_keys, prev_values = self.key_values
+
+        new_keys = mx.concatenate([prev_keys, key], axis=-2)
+        new_values = mx.concatenate([prev_values, value], axis=-2)
+        self.key_values = (new_keys, new_values)
         self.offset += key.shape[-2]
-
-        # 当前阶段原样返回 mask，包括字符串 "causal"
-        return self.keys, self.values, self.offset, mask
+        return new_keys, new_values, self.offset, mask
 
     def materialize(self):
-        pass
+        if self.key_values is not None:
+            mx.eval(*self.key_values)
 
     def rewind(self, n: int):
-        pass
+        if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= self.offset:
+            raise ValueError("rewind length must be between zero and the cache length")
+        if n == 0:
+            return
+        self.offset -= n
+        if self.offset == 0:
+            self.key_values = None
+            return
+        self.key_values = (
+            self.key_values[0][:, :, : self.offset],
+            self.key_values[1][:, :, : self.offset],
+        )

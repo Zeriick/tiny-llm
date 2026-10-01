@@ -93,7 +93,16 @@ def mlx_quantized_linear(
     w: QuantizedWeights,
     bias: mx.array | None = None,
 ) -> mx.array:
-    pass
+    result = mx.quantized_matmul(
+        x,
+        w.weight,
+        scales=w.scales,
+        biases=w.biases,
+        transpose=True,
+        group_size=w.group_size,
+        bits=w.bits,
+    )
+    return result if bias is None else result + bias
 
 
 def quantized_matmul(
@@ -203,6 +212,9 @@ def quantized_linear(
     w: QuantizedWeights,
     bias: mx.array | None = None,
 ) -> mx.array:
+    if w.use_mlx_quantized_linear:
+        return mlx_quantized_linear(x, w, bias)
+
     rows = 1
     for size in x.shape[:-1]:
         rows *= size
