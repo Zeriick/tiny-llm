@@ -2,142 +2,139 @@
   tiny-llm-book © 2022-2026 by Alex Chi Z is licensed under CC BY-NC-SA 4.0
 -->
 
-# 🚧 Week 2: A Step Closer to vLLM
+# 🚧 Week 2: A Faster Single Request
 
-Week 1 leaves you with a readable Qwen3 model that can generate text. This week,
-you will turn it into a measured single-request serving path. After each change,
-you will rerun the same synchronized workload, find where time now goes, and use
-that evidence to choose what to change next. Instead of collecting unrelated
-kernels, you will build an optimization story you can explain.
+Week 1 leaves you with a readable Qwen3 model that regenerates from the full
+prefix. The **current Week 2 route contains Days 1–5**: reuse previous keys
+and values, bound their dense storage, keep projection weights packed, then
+reuse W4 and activation tiles during matrix-shaped prefill. Day 4 integrates
+RMSNorm, RoPE, and SwiGLU as three separate model checkpoints. Day 5 adds
+tiled dense prefill attention and runs the final selected model. Its nine
+cumulative checkpoints are `kv-cache`, `capacity-cache`, `quantized-matvec`,
+`simd-matmul`, `rmsnorm`, `rope`, `swiglu`, `tiled-prefill`, and `selected`.
 
-Days 1–5 form the main route. Day 6 is an optional lab for an operator that
-matters to a workload you choose. On Day 7, you will test Split-K where a
-short-shape measurement suggests it may help, then make a final keep-or-reject
-decision on the fixed product workload.
+Begin with [Day 1: Cache and Measure](./week2-01-kv-cache.md). Its first
+feedback loop builds the extension required for test collection, runs the
+focused KV test, and sends only the new token during decode. Its second loop
+bounds storage without exposing unused capacity to attention. After both
+checkpoints, compare the same request across Week 1, `kv-cache`, and
+`capacity-cache`; keep the serving-only comparison separate from the
+all-logit algorithm comparison.
 
-Begin with [Day 1: KV Cache](./week2-01-kv-cache.md), where you will stop
-recomputing the entire prefix for every generated token.
+Continue with [Day 2: Keep W4 Packed](./week2-02-quantize-model.md). Start
+from a working `capacity-cache` model. Implement selected-row embedding
+dequantization, a checked quantized operator, a readable Metal control and
+decode matvec, then wire packed projections into the cached model. The Day 2
+checkpoint is complete when the model actually calls the packed-weight path.
 
-> ⏱️ **Time commitment.** Days 3–5 introduce custom Metal kernels and may take
-> substantially longer than Week 1 Days 6–7. You may skip Day 6. On Day 7, your
-> Split-K implementation must be correct, but the course does not require an
-> absolute speed or a universal crossover point.
+Continue to [Day 3: SIMD Matrix Prefill](./week2-03-simd-matrix-prefill.md).
+Keep Day 2's `quantized-matvec` checkpoint as the pre-edit control. Build a
+cooperative matrix kernel for the larger activation shapes, verify partial
+output tiles against the readable control, then compare the two checkpoints
+under the same cached-model workload.
 
-Week 2 keeps BF16 for dense weights, quantization scales and biases,
-activations, projections, KV-cache entries, and model-facing kernel outputs.
-Packed W4 weight codes use `uint32`. Reductions, dot products, and
-online-softmax state accumulate in FP32 before returning BF16. Week 3 inherits
-these interfaces and precision boundaries.
+Continue to [Day 4: Fused Model Primitives](./week2-04-fused-model-kernels.md).
+Keep `simd-matmul` as the pre-edit model control. Implement register-cached
+RMSNorm, RoPE over the model's head layout, and fused SwiGLU in order. Compare
+each operator with its readable equation, run its cumulative checkpoint, then
+measure all four model variants under one matched 0.6B workload.
 
-## Measure, Change, and Measure Again
+Finish with [Day 5: Tiled Dense Prefill Attention](./week2-05-tiled-prefill-attention.md).
+Keep `swiglu` as the pre-edit product control. Build the BF16/D128 tiled path,
+preserve causal and additive masks, GQA, and the short-query fallback, then
+run `tiled-prefill` and the completed `selected` model on the same cached
+0.6B request. The selected checkpoint names the final cumulative feature set;
+it adds no second attention kernel.
 
-Use the same four-part loop at each checkpoint:
+## Day 1 route
 
-1. **Check correctness.** Run the focused supplied test before timing.
-2. **Describe the workload.** Record model, checkpoint, phase, token counts,
-   prefill-logit mode, warmups, iterations, software, and device.
-3. **Find the next cost.** Name the dominant operator category and make one
-   bounded hypothesis before editing.
-4. **Rerun and decide.** Repeat the identical product and attribution workload,
-   then record `keep`, `reject`, or `inconclusive`, along with evidence that
-   would change your conclusion.
+| Step | What you own | Feedback |
+|---|---|---|
+| Prepare | Build the Week 2 extension after [Week 1 Day 7](./week1-07-sampling-prepare.md) | `pdm run build-ext` |
+| Cache the prefix | Implement dense K/V reuse in the model and generation loop | `pdm run test --week 2 --day 1 -- -k 'not capacity'` |
+| Bound the cache | Allocate from the request limit, expose only the logical prefix, and preserve reset/rewind/overflow behavior | `pdm run test --week 2 --day 1` after the capacity work |
+| Measure | Keep the workload and prefill-logit mode matched | [Day 1 measurement loop](./week2-01-kv-cache.md#measure-the-first-cache-change) |
 
-You can complete this loop with the synchronized benchmark and portable
-attribution runner. Apple GPU capture and `gpudebug` appear only in the
-[optional macOS 27 lab](./week2-advanced-profiling.md); neither is a
-prerequisite.
+## Day 2 route
 
-## Daily Checkpoints
+| Step | What you own | Feedback |
+|---|---|---|
+| Prepare | Keep the Day 1 `capacity-cache` control; build learner and reference extensions for the native Day 2 checks | `pdm run build-ext` and `pdm run build-ext-ref` |
+| Keep W4 packed | Dequantize selected embedding rows, validate the wrapper, and implement the Metal matrix control and SIMD matvec | Focused [Day 2 tests](./week2-02-quantize-model.md) |
+| Integrate | Route the cached model's projections and output head through the packed operator | Complete Day 2 gate and a live `quantized-matvec` run |
+| Measure | Compare capacity, packed W4, and MLX with one model and one workload | [Day 2 measurement loop](./week2-02-quantize-model.md#verify-quantization-in-the-complete-model) |
 
-1. **KV cache:** make decode incremental and compare it with the Week 1 model on
-   a matched workload.
-2. **Discover:** learn to synchronize a measurement, attribute the cached
-   model, and choose one bounded optimization. In the checked run, dense
-   projections became the next target.
-3. **Packed W4 matvec:** keep weights packed while you optimize decode
-   projections, then re-profile. In the checked run, normalization, position,
-   and activation work became visible next.
-4. **Fused model kernels:** implement RMSNorm, RoPE, and SwiGLU one at a time.
-   Keep each change only after a matched measurement, then re-profile prefill
-   before choosing Day 5.
-5. **SIMD-matrix prefill:** replace the matrix-shaped projection schedule chosen
-   from the fixed 128-token prefill attribution.
-6. **Optional operator lab:** choose a secondary operator category for one
-   explicit workload. The supplied branch studies bounded decode attention,
-   but an equivalent evidence-led operator experiment is also valid.
-7. **Conditional Split-K and final decision:** try an under-filled 32-token
-   projection while preserving the unsplit Day 5 fallback. Finish by rerunning
-   the fixed 128×129 product workload and deciding whether to keep the change.
+## Day 3 route
 
-## What Is Supplied and What You Own
+| Step | What you own | Feedback |
+|---|---|---|
+| Prepare | Complete Day 2, build both native extensions, and save a `quantized-matvec` prefill control | [Day 3 baseline](./week2-03-simd-matrix-prefill.md#keep-the-pre-edit-control) |
+| Build the tile | Load BF16 activation and reconstructed W4 fragments cooperatively; accumulate in FP32 and guard partial outputs | Focused [partial-tile test](./week2-03-simd-matrix-prefill.md#task-1-load-and-multiply-a-w4-tile) |
+| Integrate | Keep the decode-shaped matvec, dispatch larger matrices to SIMD, and wire `simd-matmul` through the cached model | Complete Day 3 test and live model checkpoint |
+| Measure | Compare old and new prefill paths with the same cached 0.6B model and workload | [Day 3 product loop](./week2-03-simd-matrix-prefill.md#measure-the-matched-product) |
 
-The starter gives you model loading, the extension build system, benchmark and
-attribution runners, correctness tests, Python reference equations, stable
-checkpoint interfaces, and a compact checked M4 Pro evidence file. You will
-build the cache transition, integrate packed weights, implement the custom
-operators, and turn each measurement into a decision record.
+## Day 4 route
 
-The completed course path uses your implementations, not MLX replacements, for
-the operators it asks you to build. If you want to reach the later serving
-mechanisms without implementing one custom kernel, keep the course interface
-and connect the corresponding MLX operator locally. This substitution stays
-inside your course model. It is different from `--solution mlx`, which runs the
-separate full-MLX model.
+<table>
+  <thead>
+    <tr><th scope="col">Step</th><th scope="col">What you own</th><th scope="col">Feedback</th></tr>
+  </thead>
+  <tbody>
+    <tr><th scope="row">Prepare</th><td>Complete Day 3 and save a <code>simd-matmul</code> 0.6B product control</td><td><a href="./week2-04-fused-model-kernels.md">Day 4 baseline</a></td></tr>
+    <tr><th scope="row">Normalize</th><td>Add register-cached RMSNorm with a wider-row fallback and integrate it into every Week 2 norm</td><td>Focused Task 1 check and live <code>rmsnorm</code> checkpoint</td></tr>
+    <tr><th scope="row">Rotate</th><td>Reuse each RoPE angle across head pairs and accept per-batch offsets</td><td>Focused Task 2 check and live <code>rope</code> checkpoint</td></tr>
+    <tr><th scope="row">Activate</th><td>Fuse SiLU and the gate/up product, then verify the cumulative model</td><td>Focused Task 3 check and complete Day 4 gate at <code>swiglu</code></td></tr>
+    <tr><th scope="row">Measure</th><td>Compare the Day 3 control and three Day 4 checkpoints at one cached 0.6B workload</td><td><a href="./week2-04-fused-model-kernels.md#measure-the-cumulative-product">Day 4 product loop</a></td></tr>
+  </tbody>
+</table>
 
-## Check Your Progress
+## Day 5 route
 
-Run the canonical selector after each day:
+<table>
+  <thead>
+    <tr><th scope="col">Step</th><th scope="col">What you own</th><th scope="col">Feedback</th></tr>
+  </thead>
+  <tbody>
+    <tr><th scope="row">Prepare</th><td>Keep the Day 4 <code>swiglu</code> model and save its matched 0.6B product control</td><td><a href="./week2-05-tiled-prefill-attention.md">Day 5 baseline</a></td></tr>
+    <tr><th scope="row">Tile</th><td>Implement BF16/D128 grouped attention with BQ32/BK16 tiles and online softmax</td><td>Focused causal GQA and partial-tail check</td></tr>
+    <tr><th scope="row">Preserve</th><td>Apply causal/additive masks, return zero for fully masked rows, and keep readable short-query attention</td><td>Mask and fallback checks</td></tr>
+    <tr><th scope="row">Integrate</th><td>Run the cumulative <code>tiled-prefill</code> model, then the named final <code>selected</code> model</td><td>Complete Day 5 gate and live model commands</td></tr>
+    <tr><th scope="row">Measure</th><td>Compare Day 4 control, tiled prefill, selected, and MLX on one cached 0.6B request</td><td><a href="./week2-05-tiled-prefill-attention.md#measure-the-matched-product">Day 5 product loop</a></td></tr>
+  </tbody>
+</table>
 
-| Course day | Test command |
-|---|---|
-| Day 1 | `pdm run test --week 2 --day 1` |
-| Day 2 | `pdm run test --week 2 --day 2` |
-| Day 3 | `pdm run test --week 2 --day 3` |
-| Day 4 | `pdm run test --week 2 --day 4` |
-| Day 5 | `pdm run test --week 2 --day 5` |
-| Day 6 (optional) | `pdm run test --week 2 --day 6` |
-| Day 7 | `pdm run test --week 2 --day 7` |
+The Day 1 starter supplies model loading, test entrypoints, and benchmark and
+attribution helpers; you own the cache state and serving loop. Day 2 adds the
+packed-weight container and native operator boundaries, but you implement the
+embedding, kernels, and model wiring. Day 3 adds the SIMD matrix path behind
+that packed operator. The reference solution and full MLX
+model are separate controls; they do not fill your learner TODOs. Day 4 adds
+three native primitives to the same cached, packed model. Day 5 adds the
+tiled attention operator and model selector. A cache
+counter shows which bytes moved, while a synchronized complete-request
+comparison shows whether a mechanism helped the chosen workload.
 
-When a command runs a model, benchmark, profile, capture, or reducer, pass
-`--solution tiny_llm` exactly as the chapter shows. Some command-line tools
-otherwise default to the completed reference, so omitting it may measure code
-you did not write.
+## Historical lessons and Week 3
 
-### Bring Forward Work from the Earlier Day Order
+The five active days end at `selected`. [Week 3](./week3-overview.md) reuses
+the model and dense-cache interfaces while adding paging, batching, and
+serving policy; its learner work remains separate from the single-request
+Week 2 route.
 
-An earlier course order put decode attention on Day 5 and SIMD-matrix prefill on
-Day 6. If your checkout contains work from that order, you can keep it. First
-complete the current Day 5 SIMD gate, then use the optional Day 6 gate to check
-your retained attention implementation. The ordinary `--week 2 --day 5` and
-`--week 2 --day 6` commands above are the only selectors you need. Old Day 5
-and Day 6 bookmarks now redirect to the corresponding canonical lessons.
-
-## What the Gates Check
-
-Most required gates check public behavior: checkpoint and workload identity,
-operator results, fallbacks, synchronized output, and the decision-record
-schema. You may organize most internals differently. Course-ownership and
-extension-integration witnesses intentionally preserve explicit source and
-header seams. The gates do not grade device timings or require the optional
-`gpudebug` tooling.
-
-Read the checked example as one machine's optimization story, not a portable
-speed claim. Its absolute measurements come from one M4 Pro running macOS 27
-with Qwen3-4B, a fixed 128-token prompt and 129-output-token product control,
-and `n=2` balanced product samples. Six of eight captures exposed full
-shader/counter detail. The pre-SIMD prefill capture did not expose a shader
-ranking, while the Split-K capture exposed only static dispatch. The example
-marks the missing data unavailable instead of guessing.
-
-## Continue to Week 3
-
-By the end of Week 2, your model decodes one token at a time from a dense KV
-cache, chooses separate prefill and decode projection schedules, and keeps its
-weights quantized. Week 3 keeps these model, cache, precision, and operator
-interfaces while adding paging and batching. You do not need the optional Day
-6 attention branch to continue, and Day 7 begins from Day 5's unsplit SIMD path.
-
-The [performance evidence ledger](./appendix-performance.md) shows the checked
-causal example and its limits.
+Earlier seven-day lessons whose URLs are not reused for active Days 1–5 remain
+at their old addresses as
+[historical Week 2 material](./week2-02-benchmark-profile.md). The former Day 4
+address now serves the [active fused-primitives lesson](./week2-04-fused-model-kernels.md).
+The historical pages preserve
+benchmark method, W4 derivation, Apple M1–M4 bandwidth and roofline
+calculations, fusion/SIMD mechanisms, optional capture, and the old
+bounded-decode and Split-K experiments. Their
+[operator-attribution diagram](./week2-kernel-profile.svg) and
+[decision diagram](./week2-performance-summary.svg) are also historical
+evidence, not diagrams of the current checkout. Those pages describe a different
+checkpoint order and may show commands unavailable in this partial branch.
+Use Days 1–5 above for the current learner workflow. The
+[performance evidence ledger](./appendix-performance.md) is likewise
+historical context, not a performance claim for this checkout.
 
 {{#include copyright.md}}

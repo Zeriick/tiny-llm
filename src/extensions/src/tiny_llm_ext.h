@@ -322,4 +322,35 @@ private:
     int num_heads_;
 };
 
+// Week 2, Day 5: learner exercise, retained as a native TODO.
+mx::array _dense_attention_prefill_mma(const mx::array &q, const mx::array &k, const mx::array &v,
+                                       const mx::array &mask, float scale, bool is_causal, bool has_mask, int num_heads,
+                                       int num_kv_heads, mx::StreamOrDevice s = {});
+
+class Week2DensePrefillMMA : public mx::Primitive {
+public:
+    Week2DensePrefillMMA(mx::Stream stream, float scale, bool is_causal, bool has_mask, int num_heads, int num_kv_heads)
+        : mx::Primitive(stream),
+          scale_(scale),
+          is_causal_(is_causal),
+          has_mask_(has_mask),
+          num_heads_(num_heads),
+          num_kv_heads_(num_kv_heads) {}
+    void eval_cpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) override;
+    void eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) override;
+    std::pair<std::vector<mx::array>, std::vector<int>> vmap(const std::vector<mx::array> &,
+                                                             const std::vector<int> &) override {
+        throw std::runtime_error("Week2DensePrefillMMA has no vmap implementation.");
+    }
+    const char *name() const override { return "Week2DensePrefillMMA"; }
+
+private:
+    float scale_;
+    bool is_causal_;
+    bool has_mask_;
+    int num_heads_;
+    int num_kv_heads_;
+};
+
+
 }  // namespace tiny_llm_ext

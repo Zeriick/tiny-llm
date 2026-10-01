@@ -1,4 +1,15 @@
-# 🚧 Week 2 Day 5: SIMD-Matrix Prefill
+# Historical Week 2: Simd Matrix Prefill
+
+> **Earlier lesson address.** This page preserves the SIMD matrix prefill
+> explanation and its original links. The current Week 2 learner route
+> ships [Day 1: Cache and Measure](./week2-01-kv-cache.md),
+> [Day 2: Keep W4 Packed](./week2-02-quantize-model.md),
+> [Day 3: SIMD Matrix Prefill](./week2-03-simd-matrix-prefill.md),
+> [Day 4: Fused Model Primitives](./week2-04-fused-model-kernels.md), then
+> [Day 5: Tiled Dense Prefill Attention](./week2-05-tiled-prefill-attention.md).
+> Later checkpoints, day numbers, tests, and commands below belong to an
+> earlier all-days course state; do not use them as gates for this checkout.
+
 
 Day 4 ends with a decision, not a predetermined kernel. Re-profile the fixed
 128-token prefill and name the dominant category before changing code. On the
@@ -17,15 +28,16 @@ fresh-process samples. Your device and crossover may differ.
 
 ## Establish the Same-Workload Baseline
 
-First verify the inherited checkpoint:
+Start from the checkpoint you already have. Build the extension and run the
+focused gate before editing:
 
 ```bash
 pdm run build-ext
 pdm run test --week 2 --day 5
 ```
 
-Then record the product and attribution baselines that you will repeat after
-the change:
+Freeze both baselines next. You will repeat these exact commands after the
+kernel change:
 
 ```bash
 pdm run bench-week2-progression --offline --solution tiny_llm --repeats 2 \
@@ -45,7 +57,7 @@ new prefill kernel at one shape with an old result from another shape.
 
 ## Task 1: Load One Quantized Tile Cooperatively
 
-Work in the existing quantized-matmul extension surface:
+Open the three existing extension files; this task stays inside that surface:
 
 ```plain
 src/extensions/src/cooperative_matrix.h
@@ -53,7 +65,7 @@ src/extensions/src/quantized_matmul.metal
 src/extensions/src/quantized_matmul.cpp
 ```
 
-The output remains
+Keep the operation fixed while you change its schedule:
 
 $$
 C = A W^T,
@@ -100,7 +112,8 @@ performance claim and not the separate `--solution mlx` model.
 
 ## Task 3: Check Correctness in the Product
 
-Run the focused day gate before drawing a timing conclusion:
+Once the new path is connected, get focused feedback before asking the full
+model to exercise the checkpoint:
 
 ```bash
 pdm run build-ext
@@ -117,7 +130,8 @@ model output—not a private symbol or source-file layout.
 
 ## Task 4: Re-profile and Decide
 
-Rerun the exact commands from the baseline section. Record three sentences:
+Now repeat the exact baseline commands, then close the loop in three
+sentences:
 
 1. which operator category dominated the baseline prefill;
 2. whether the candidate changed that category and the matched product phase;

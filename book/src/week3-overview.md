@@ -10,9 +10,10 @@ model uses one page-aware attention interface. A correct direct page-walking
 implementation may serve every query shape; the completed reference adds a
 tiled schedule for the supported BF16 long-prefill hot case.
 
-Week 2's course-owned quantized projections remain the inspectable endpoint of
-that week's kernel lessons. Week 3 deliberately switches dense-model
-projections to `mx.quantized_matmul` at model construction, while retaining the
+The [Week 2 `selected` model](./week2-05-tiled-prefill-attention.md) completes
+the single-request route with tiled dense attention; its course-owned quantized
+projections remain an inspectable kernel lesson. Week 3 deliberately switches
+dense-model projections to `mx.quantized_matmul` at model construction, while retaining the
 course-owned normalization, activation, cache, attention, paging, and
 scheduler paths. This keeps Week 3 focused on serving-system mechanisms rather
 than carrying the teaching kernel's projection cost through every benchmark.
@@ -42,13 +43,16 @@ retains correct direct fallbacks for short queries and generic shapes. Every
 schedule reads the same page pool through the same block-table interface;
 none rebuilds dense K/V.
 
-Paged attention is not an automatic single-request latency win. The checked
-trace measures lower KV storage, page reuse, incremental growth, and batching;
-page-table indirection can make one request slower. It does not establish an
+Paged attention is not an automatic single-request latency win. The historical
+task #367 trace, measured on source
+`18aec8503929d80c986324578068ecac2463c2ac` before the five-day Week 2
+revamp, showed lower KV storage, page reuse, incremental growth, and batching;
+page-table indirection can make one request slower. Those figures do not
+describe the current Week 2 `selected` baseline or establish an
 admission-capacity gain without a memory-capped sweep. Each chapter ends with a
-focused measurement, while the
-[performance appendix](./appendix-performance.md) records the matched
-chapter-by-chapter results.
+focused measurement you can run on this checkout. The
+[performance appendix](./appendix-performance.md) preserves the older matched
+chapter-by-chapter results with their source boundary.
 
 Optional Day 6 adds MoE model support independently of the cache and scheduler.
 Optional Day 7 then adds speculative decoding, whose rejection path needs a

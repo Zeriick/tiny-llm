@@ -420,4 +420,19 @@ void Week2DecodeAttention::eval_gpu(const std::vector<mx::array> &, std::vector<
     checkpoint_todo("Week2DecodeAttention::eval_gpu", "Week 2, Day 6");
 }
 
+// TODO(learner): implement the new BF16 BQ32/BK16 prefill kernel.
+mx::array _dense_attention_prefill_mma(const mx::array &, const mx::array &, const mx::array &, const mx::array &,
+                                       float, bool, bool, int, int, mx::StreamOrDevice) {
+    checkpoint_todo("_dense_attention_prefill_mma", "Week 2, Day 5");
+}
+
+void Week2DensePrefillMMA::eval_cpu(const std::vector<mx::array> &, std::vector<mx::array> &) {
+    checkpoint_todo("Week2DensePrefillMMA::eval_cpu", "Week 2, Day 5");
+}
+
+void Week2DensePrefillMMA::eval_gpu(const std::vector<mx::array> &, std::vector<mx::array> &) {
+    checkpoint_todo("Week2DensePrefillMMA::eval_gpu", "Week 2, Day 5");
+}
+
+
 }  // namespace tiny_llm_ext

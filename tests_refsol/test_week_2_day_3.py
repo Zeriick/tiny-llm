@@ -1,196 +1,200 @@
-"""Week 2 Day 3 quantized-matvec tests."""
+"""Week 2 Day 3 SIMD-matrix prefill tests."""
 
 import importlib
-import inspect
+import sys
 
 import mlx.core as mx
+import pytest
 
-from .tiny_llm_base import (
-    Qwen3ModelWeek2,
-    QuantizedEmbedding,
-    QuantizedWeights,
-    RMSNorm,
-    RoPE,
-    quantized_matmul,
-    quantized_matmul_vanilla,
-    quantized_matvec_custom,
+from benches import (
+    bench,
+    bench_course_progression,
+    profile_week2_kernels,
+    week2_gpudebug,
 )
+from benches.bench_course_progression import WEEK2_VARIANTS
+from benches.profile_week2_kernels import DEFAULT_CASES
+from benches.week2_gpudebug import KNOWN_CHECKPOINTS
+from .tiny_llm_base import Qwen3ModelWeek2, quantized_matmul, quantized_matmul_vanilla
 from .utils import assert_allclose, tiny_qwen3_mlx_model
 
-embedding_module = importlib.import_module(QuantizedEmbedding.__module__)
-quantize_module = importlib.import_module(quantized_matmul.__module__)
 
-
-def test_task_1_quantized_embedding_dequantizes_selected_rows():
-    weight = mx.random.normal((7, 256)).astype(mx.bfloat16)
-    packed, scales, biases = mx.quantize(weight, group_size=128, bits=4)
-    embedding = QuantizedEmbedding(
-        7, 256, QuantizedWeights(scales, biases, 128, 4, packed)
-    )
-    indices = mx.array([[1, 4]])
-
-    result = embedding(indices)
-    expected = mx.dequantize(
-        packed[indices], scales[indices], biases[indices], group_size=128, bits=4
-    )
-    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
-
-
-def test_task_1_quantized_embedding_accepts_sampled_uint32_tokens():
-    weight = mx.random.normal((7, 256)).astype(mx.bfloat16)
-    packed, scales, biases = mx.quantize(weight, group_size=128, bits=4)
-    embedding = QuantizedEmbedding(
-        7, 256, QuantizedWeights(scales, biases, 128, 4, packed)
-    )
-    indices = mx.array([[1, 4]], dtype=mx.uint32)
-
-    result = embedding(indices)
-    expected = mx.dequantize(
-        packed[indices], scales[indices], biases[indices], group_size=128, bits=4
-    )
-    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
-
-
-def test_week2_quantization_path_uses_course_owned_operators():
-    source = (
-        inspect.getsource(quantize_module.quantized_matmul)
-        + inspect.getsource(quantize_module.dequantize_weights)
-        + inspect.getsource(embedding_module.QuantizedEmbedding.__call__)
-    )
-    assert "mx.quantized_matmul" not in source
-    assert "mx.dequantize" not in source
-
-
-def test_task_4_model_integrates_packed_weights_before_fast_kernels():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="quantized-matvec")
-    layer = model.layers_inner[0]
-
-    assert isinstance(model.embedding, QuantizedEmbedding)
-    assert isinstance(layer.self_attn.wq, QuantizedWeights)
-    assert isinstance(layer.mlp.w_gate, QuantizedWeights)
-    assert isinstance(layer.input_layernorm, RMSNorm)
-    assert isinstance(layer.self_attn.rope, RoPE)
-    assert not layer.self_attn.use_decode_attention
-    assert not layer.mlp.use_fast_swiglu
-
-
-def quantized_matmul_helper(
-    stream: mx.Stream,
-    precision: mx.Dtype,
-    identity_matrix: bool,
-):
-    with mx.stream(stream):
-        group_size = 128
-        if identity_matrix:
-            input = mx.eye(group_size, dtype=precision)
-        else:
-            input = mx.random.normal(shape=(3, group_size), dtype=precision)
-        weight = mx.random.normal(shape=(5, group_size), dtype=precision)
-        w_q, scales, biases = mx.quantize(weight, group_size=group_size, bits=4)
-        user_out = quantized_matmul(
-            scales=scales,
-            biases=biases,
-            group_size=group_size,
-            bits=4,
-            a=input,
-            b=w_q,
-            transpose_b=True,
+def test_task_1_simd_matmul_checkpoint_runs_the_week2_engine():
+    fixture = tiny_qwen3_mlx_model()
+    tokens = mx.array([[1, 2, 3]], dtype=mx.int32)
+    with mx.stream(mx.gpu):
+        simd_model = Qwen3ModelWeek2(fixture, checkpoint="simd-matmul")
+        readable_model = Qwen3ModelWeek2(fixture, checkpoint="quantized-matvec")
+        simd_output = simd_model(tokens, 0, simd_model.create_kv_cache(capacity=3))
+        readable_output = readable_model(
+            tokens, 0, readable_model.create_kv_cache(capacity=3)
         )
-        ref_out = mx.quantized_matmul(
-            input,
-            w_q,
+        mx.eval(simd_output, readable_output)
+
+    assert simd_output.dtype == readable_output.dtype == mx.bfloat16
+    assert simd_output.shape == readable_output.shape
+    assert simd_output.shape[:2] == (1, 3)
+    assert_allclose(simd_output, readable_output, mx.bfloat16, atol=0.25, rtol=1e-2)
+
+
+def test_task_2_simdgroup_matmul_matches_readable_partial_tiles_gpu():
+    with mx.stream(mx.gpu):
+        inputs = mx.random.normal((10, 256)).astype(mx.bfloat16)
+        weight = mx.random.normal((97, 256)).astype(mx.bfloat16)
+        packed, scales, biases = mx.quantize(weight, group_size=128, bits=4)
+        tiled = quantized_matmul(
             scales,
             biases,
-            group_size=group_size,
-            bits=4,
-            transpose=True,
-        )
-        assert user_out.dtype == mx.bfloat16
-        if identity_matrix:
-            assert_allclose(user_out, ref_out, precision)
-        else:
-            assert_allclose(
-                user_out,
-                ref_out,
-                precision,
-                atol=5.0e-1,
-                message=f"quantized matmul {precision} comparison",
-            )
-
-
-def test_task_3_quantized_matmul_simple_bf16_gpu():
-    quantized_matmul_helper(mx.gpu, mx.bfloat16, True)
-
-
-def test_task_3_quantized_matmul_complex_bf16_gpu():
-    quantized_matmul_helper(mx.gpu, mx.bfloat16, False)
-
-
-def test_task_3_optimized_matvec_matches_vanilla_gpu():
-    """The scalar baseline must remain callable for a decode-shaped input."""
-    with mx.stream(mx.gpu):
-        input = mx.random.normal((1, 256)).astype(mx.bfloat16)
-        weight = mx.random.normal((96, 256)).astype(mx.bfloat16)
-        packed, scales, biases = mx.quantize(weight, group_size=128, bits=4)
-        optimized = quantized_matvec_custom(
-            scales, biases, 128, 4, input, packed, transpose_b=True
-        )
-        vanilla = quantized_matmul_vanilla(
-            scales, biases, 128, 4, input, packed, transpose_b=True
-        )
-        assert_allclose(optimized, vanilla, mx.bfloat16, atol=0.5, rtol=2e-2)
-
-
-def quantized_matvec_custom_helper(num_rows: int):
-    with mx.stream(mx.gpu):
-        group_size = 128
-        input = mx.random.normal(shape=(num_rows, group_size), dtype=mx.bfloat16)
-        weight = mx.random.normal(shape=(64, group_size), dtype=mx.bfloat16)
-        w_q, scales, biases = mx.quantize(weight, group_size=group_size, bits=4)
-        user_out = quantized_matvec_custom(
-            scales=scales,
-            biases=biases,
-            group_size=group_size,
-            bits=4,
-            a=input,
-            b=w_q,
-            transpose_b=True,
-        )
-        ref_out = mx.quantized_matmul(
-            input,
-            w_q,
-            scales,
-            biases,
-            group_size=group_size,
-            bits=4,
-            transpose=True,
-        )
-        assert_allclose(user_out, ref_out, mx.bfloat16, atol=5.0e-1)
-
-
-def test_task_4_quantized_matvec_custom_m1_gpu():
-    quantized_matvec_custom_helper(1)
-
-
-def test_task_4_quantized_matvec_custom_m8_gpu():
-    quantized_matvec_custom_helper(8)
-
-
-def test_task_4_quantized_matvec_custom_qwen_shape_gpu():
-    with mx.stream(mx.gpu):
-        input = mx.random.normal((1, 2560)).astype(mx.bfloat16)
-        weight = mx.random.normal((1024, 2560)).astype(mx.bfloat16)
-        packed, scales, biases = mx.quantize(weight, group_size=128, bits=4)
-        result = quantized_matvec_custom(
-            scales, biases, 128, 4, input, packed, transpose_b=True
-        )
-        expected = mx.quantized_matmul(
-            input,
+            128,
+            4,
+            inputs,
             packed,
-            scales,
-            biases,
-            group_size=128,
-            bits=4,
-            transpose=True,
+            transpose_b=True,
+            use_simdgroup=True,
         )
-        assert_allclose(result, expected, mx.bfloat16, atol=1.5)
+        readable = quantized_matmul_vanilla(
+            scales, biases, 128, 4, inputs, packed, transpose_b=True
+        )
+        assert tiled is not None, "implement the SIMD quantized_matmul learner seam"
+        assert_allclose(tiled, readable, mx.bfloat16, atol=0.25, rtol=1e-2)
+
+
+@pytest.mark.parametrize("seed", (0, 4))
+def test_task_3_simd_matmul_model_prefill_matches_readable_control_gpu(seed):
+    random_state = mx.random.state[:]
+    try:
+        mx.random.seed(seed)
+        fixture = tiny_qwen3_mlx_model()
+    finally:
+        mx.random.state[:] = random_state
+
+    tokens = mx.array([list(range(1, 11))], dtype=mx.int32)
+    with mx.stream(mx.gpu):
+        simd_model = Qwen3ModelWeek2(fixture, checkpoint="simd-matmul")
+        readable_model = Qwen3ModelWeek2(fixture, checkpoint="quantized-matvec")
+        simd_output = simd_model(tokens, 0, simd_model.create_kv_cache(capacity=10))
+        readable_output = readable_model(
+            tokens, 0, readable_model.create_kv_cache(capacity=10)
+        )
+        mx.eval(simd_output, readable_output)
+
+    assert simd_output.dtype == readable_output.dtype == mx.bfloat16
+    assert simd_output.shape == readable_output.shape
+    assert_allclose(
+        simd_output,
+        readable_output,
+        mx.bfloat16,
+        atol=0.75,
+        rtol=5e-2,
+        message=f"fixture seed {seed}",
+    )
+
+
+def test_day3_public_selectors_keep_simd_prefix():
+    model_module = importlib.import_module(Qwen3ModelWeek2.__module__)
+    checkpoints = (
+        "kv-cache",
+        "capacity-cache",
+        "quantized-matvec",
+        "simd-matmul",
+    )
+    assert model_module.WEEK2_CHECKPOINTS[:4] == checkpoints
+    assert KNOWN_CHECKPOINTS[:4] == checkpoints
+    assert DEFAULT_CASES[:4] == (
+        "kv-cache:decode:128",
+        "capacity-cache:decode:128",
+        "quantized-matvec:decode:128",
+        "simd-matmul:prefill:128",
+    )
+    assert [variant.key for variant in WEEK2_VARIANTS][:5] == [
+        "week1",
+        "week2-kv-cache",
+        "week2-capacity-cache",
+        "week2-quantized-matvec",
+        "week2-simd-matmul",
+    ]
+
+
+def test_day3_model_free_cli_parsers(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "bench",
+            "--solution",
+            "tiny_llm_ref",
+            "--loader",
+            "week2",
+            "--week2-checkpoint",
+            "simd-matmul",
+            "--model",
+            "qwen3-0.6b",
+            "--prefill-logits",
+            "last",
+        ],
+    )
+    bench_args = bench.parse_args()
+    bench.validate_args(bench_args)
+    assert bench_args.week2_checkpoint == "simd-matmul"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "progression",
+            "--solution",
+            "ref",
+            "--suite",
+            "week2",
+            "--repeats",
+            "2",
+            "--variant",
+            "week2-quantized-matvec",
+            "--variant",
+            "week2-simd-matmul",
+            "--prefill-logits",
+            "last",
+        ],
+    )
+    assert bench_course_progression.parse_args().variant == [
+        "week2-quantized-matvec",
+        "week2-simd-matmul",
+    ]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "profile",
+            "--solution",
+            "tiny_llm_ref",
+            "--case",
+            "simd-matmul:prefill:128",
+        ],
+    )
+    assert profile_week2_kernels.parse_args().case == [
+        profile_week2_kernels.ProfileCase("simd-matmul", "prefill", 128)
+    ]
+
+    capture = week2_gpudebug.build_parser().parse_args(
+        [
+            "capture",
+            "--solution",
+            "tiny_llm_ref",
+            "--model",
+            "qwen3-0.6b",
+            "--checkpoint",
+            "simd-matmul",
+            "--phase",
+            "prefill",
+            "--tokens",
+            "128",
+            "--trace",
+            "trace.gputrace",
+            "--metadata",
+            "metadata.json",
+            "--manifest",
+            "manifest.json",
+        ]
+    )
+    assert capture.checkpoint == "simd-matmul"

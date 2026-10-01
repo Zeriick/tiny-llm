@@ -25,13 +25,14 @@ if str(SRC_ROOT) not in sys.path:
 
 DEFAULT_CASES = (
     "kv-cache:decode:128",
+    "capacity-cache:decode:128",
     "quantized-matvec:decode:128",
-    "swiglu:decode:128",
     "simd-matmul:prefill:128",
-    "simd-matmul:prefill:32",
-    "decode-attention:decode:128",
-    "decode-attention:prefill:128",
-    "split-k:prefill:32",
+    "rmsnorm:decode:128",
+    "rope:decode:128",
+    "swiglu:decode:128",
+    "tiled-prefill:prefill:128",
+    "selected:prefill:128",
 )
 PROMPT_RULE = "synthetic-token-ids"
 PREFILL_LOGITS = "all"
@@ -65,6 +66,8 @@ class KernelImplementation:
     swiglu: Callable[[mx.array, mx.array], mx.array]
     decode_attention_max_query: int
     decode_attention_max_context: int
+    tiled_attention: Callable[..., mx.array] | None = None
+    tiled_attention_min_query: int = 9
 
 
 def load_implementation(name: str) -> KernelImplementation:
@@ -86,6 +89,8 @@ def load_implementation(name: str) -> KernelImplementation:
         swiglu=kernels.swiglu,
         decode_attention_max_query=getattr(model, "DECODE_ATTENTION_MAX_QUERY", 0),
         decode_attention_max_context=getattr(model, "DECODE_ATTENTION_MAX_CONTEXT", 0),
+        tiled_attention=kernels.dense_prefill_attention_mma,
+        tiled_attention_min_query=kernels.DENSE_PREFILL_MIN_QUERY,
     )
 
 
@@ -371,9 +376,23 @@ class KernelReplay:
         mask = "causal" if self.phase == "prefill" else None
         for layer in self.model.layers_inner:
             attention = layer.self_attn
-            if should_use_decode_attention(
+            if (
+                getattr(attention, "use_tiled_prefill_attention", False)
+                and self.rows
+                >= getattr(self.implementation, "tiled_attention_min_query", 9)
+                and self.dtype == mx.bfloat16
+                and attention.head_dim == 128
+            ):
+                output = self.implementation.tiled_attention(
+                    self.query,
+                    self.key,
+                    self.value,
+                    scale=attention.scale,
+                    mask=mask,
+                )
+            elif should_use_decode_attention(
                 self.implementation,
-                attention.use_decode_attention,
+                getattr(attention, "use_decode_attention", False),
                 self.rows,
                 self.context,
                 mask,

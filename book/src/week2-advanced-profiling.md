@@ -1,4 +1,15 @@
-# Optional: Inspect a Week 2 Capture on macOS 27
+# Historical Week 2: Optional Macos Capture
+
+> **Earlier lesson address.** This page preserves the optional macOS capture
+> explanation and its original links. The current Week 2 learner route
+> ships [Day 1: Cache and Measure](./week2-01-kv-cache.md),
+> [Day 2: Keep W4 Packed](./week2-02-quantize-model.md),
+> [Day 3: SIMD Matrix Prefill](./week2-03-simd-matrix-prefill.md),
+> [Day 4: Fused Model Primitives](./week2-04-fused-model-kernels.md), then
+> [Day 5: Tiled Dense Prefill Attention](./week2-05-tiled-prefill-attention.md).
+> Later checkpoints, day numbers, tests, and commands below belong to an
+> earlier all-days course state; do not use them as gates for this checkout.
+
 
 The synchronized product benchmark and portable operator-attribution runner
 are sufficient for every required Week 2 checkpoint. This page is an optional

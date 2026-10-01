@@ -1,5 +1,13 @@
 import mlx.core as mx
 from extensions import tiny_llm_ext
+from extensions.tiny_llm_ext import _ext as tiny_llm_ext_private
+from .attention import scaled_dot_product_attention_grouped
+
+_NO_ATTENTION_MASK = mx.zeros((1,), dtype=mx.float32)
+DENSE_PREFILL_MIN_QUERY = 9
+# TODO(learner, new Week 2 Day 5): enable after implementing and validating
+# Week2DensePrefillMMA. Until then the model uses our readable GQA implementation.
+DENSE_PREFILL_MMA_IMPLEMENTED = False
 
 
 class FastRMSNorm:
@@ -7,11 +15,14 @@ class FastRMSNorm:
         self.dim = dim
         self.weight = weight
         self.eps = eps
+        # Existing two-pass kernel is preserved; register caching is still an exercise.
+        self.dispatch_counts = {"register_cached": 0, "fixed_width_fallback": 0}
 
     def __call__(self, x: mx.array) -> mx.array:
         # The C++ primitive requires the input and learned weight to have the
         # same floating-point dtype and expects contiguous buffers for its
         # backend implementation.
+        self.dispatch_counts["fixed_width_fallback"] += 1
         return tiny_llm_ext.rms_norm(
             mx.contiguous(x),
             mx.contiguous(self.weight.astype(x.dtype)),
@@ -83,21 +94,15 @@ def scaled_dot_product_attention(
     scale: float,
     mask: mx.array | str | None = None,
 ) -> mx.array:
-    s = query @ key.swapaxes(-1, -2)
-    if scale is None:
-        scale = 1.0 / mx.sqrt(key.shape[-1])
-    s = s * scale
-    if mask is not None:
-        if isinstance(mask, str):
-            if mask != "causal":
-                raise ValueError(f"Unknown mask type: {mask!r}")
-
-            # [L, S]，自动共享给所有 batch/head/group
-            mask = causal_mask(query.shape[-2], key.shape[-2], query.dtype)
-    if mask is not None:
-        s = s + mask
-    a = mx.softmax(s, axis=-1)
-    return a @ value
+    result = scaled_dot_product_attention_grouped(
+        query.astype(mx.float32), key.astype(mx.float32), value.astype(mx.float32),
+        scale=scale, mask=mask,
+    )
+    if isinstance(mask, mx.array):
+        # An all-masked row has zero probability mass, including idle batch slots.
+        fully_masked = mx.all(mask == -mx.inf, axis=-1, keepdims=True)
+        result = mx.where(fully_masked, mx.zeros_like(result), result)
+    return result.astype(query.dtype)
 
 
 def decode_attention_custom(
@@ -107,4 +112,87 @@ def decode_attention_custom(
     scale: float,
     mask: mx.array | str | None = None,
 ) -> mx.array:
-    pass
+    # Retired bounded-decode experiment keeps a working compatibility name.
+    return scaled_dot_product_attention(query, key, value, scale, mask)
+
+
+def _prepare_dense_attention_inputs(
+    query: mx.array,
+    key: mx.array,
+    value: mx.array,
+    mask: mx.array | str | None,
+) -> tuple[mx.array, mx.array, mx.array, mx.array, bool, bool]:
+    """Validate and flatten grouped-query inputs for the Day 5 native seam."""
+    if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
+        raise ValueError("dense attention expects [B,H,L,D] query, key, and value")
+    batch_size, num_heads, query_length, head_dim = query.shape
+    key_batch_size, num_kv_heads, context_length, key_head_dim = key.shape
+    if batch_size != key_batch_size or key.shape != value.shape:
+        raise ValueError("query, key, and value batch dimensions must match")
+    if head_dim != key_head_dim or num_heads % num_kv_heads != 0:
+        raise ValueError("incompatible grouped-query attention shapes")
+    if isinstance(mask, str) and mask != "causal":
+        raise ValueError(f"unsupported attention mask: {mask}")
+
+    query = mx.contiguous(query.reshape(batch_size * num_heads, query_length, head_dim))
+    key = mx.contiguous(
+        key.reshape(batch_size * num_kv_heads, context_length, head_dim)
+    )
+    value = mx.contiguous(
+        value.reshape(batch_size * num_kv_heads, context_length, head_dim)
+    )
+    is_causal = isinstance(mask, str) and mask == "causal"
+    has_mask = isinstance(mask, mx.array)
+    if has_mask:
+        mask = mx.broadcast_to(
+            mask, (batch_size, num_heads, query_length, context_length)
+        )
+        mask = mx.contiguous(
+            mask.astype(mx.float32).reshape(
+                batch_size * num_heads, query_length, context_length
+            )
+        )
+    else:
+        mask = _NO_ATTENTION_MASK
+    return query, key, value, mask, is_causal, has_mask
+
+
+def dense_prefill_attention_mma(
+    query: mx.array,
+    key: mx.array,
+    value: mx.array,
+    scale: float,
+    mask: mx.array | str | None = None,
+) -> mx.array:
+    """Day 5 interface, using readable GQA until the native exercise is complete.
+
+    Passing the public numerical tests here is not proof of a tiled kernel.
+    See DENSE_PREFILL_MMA_IMPLEMENTED and docs/upstream-migration-2026-10-01.md.
+    """
+    if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
+        raise ValueError("dense attention expects [B,H,L,D] query, key, and value")
+    expected_shape = query.shape
+    _, num_heads, query_length, head_dim = query.shape
+    num_kv_heads = key.shape[1]
+    if query.dtype != mx.bfloat16 or head_dim != 128:
+        raise ValueError("tiled dense prefill requires BF16 query/key/value with D=128")
+    if query_length < DENSE_PREFILL_MIN_QUERY:
+        raise ValueError(f"tiled dense prefill requires L >= {DENSE_PREFILL_MIN_QUERY}")
+    if key.dtype != query.dtype or value.dtype != query.dtype:
+        raise ValueError("tiled dense prefill requires matching BF16 query/key/value")
+    prepared = _prepare_dense_attention_inputs(query, key, value, mask)
+    if not DENSE_PREFILL_MMA_IMPLEMENTED:
+        return scaled_dot_product_attention(query, key, value, scale, mask)
+    query, key, value, mask, is_causal, has_mask = prepared
+    result = tiny_llm_ext_private._dense_attention_prefill_mma(
+        query,
+        key,
+        value,
+        mask,
+        scale,
+        is_causal,
+        has_mask,
+        num_heads,
+        num_kv_heads,
+    )
+    return result.reshape(expected_shape)

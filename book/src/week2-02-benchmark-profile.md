@@ -1,4 +1,17 @@
-# 🚧 Week 2 Day 2: Benchmarking and Profiling
+# Historical Week 2: Benchmarking And Profiling
+
+> **Earlier lesson address.** This page preserves the benchmarking and profiling
+> explanation and its original links. The current Week 2 learner route
+> ships [Day 1: Cache and Measure](./week2-01-kv-cache.md),
+> [Day 2: Keep W4 Packed](./week2-02-quantize-model.md),
+> [Day 3: SIMD Matrix Prefill](./week2-03-simd-matrix-prefill.md),
+> [Day 4: Fused Model Primitives](./week2-04-fused-model-kernels.md), then
+> [Day 5: Tiled Dense Prefill Attention](./week2-05-tiled-prefill-attention.md).
+> The commands below
+> remain part of the earlier course order.
+> Later checkpoints, day numbers, tests, and commands below belong to an
+> earlier all-days course state; do not use them as gates for this checkout.
+
 
 Day 1 leaves you with a cached BF16 model and a working `kv-cache` checkpoint.
 Day 2 does not add another model operator. The supplied benchmark and portable

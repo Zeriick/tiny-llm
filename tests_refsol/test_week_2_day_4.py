@@ -1,120 +1,208 @@
-"""Week 2 Day 4 fused-model-kernel tests."""
+"""Week 2 Day 4 compact model-primitive tests."""
 
-import inspect
 import importlib
+import sys
 
 import mlx.core as mx
 import pytest
 
-from tiny_llm_ref.basics import silu
-from tiny_llm_ref.layer_norm import RMSNorm
-from tiny_llm_ref.positional_encoding import RoPE
+from benches import (
+    bench,
+    bench_course_progression,
+    profile_week2_kernels,
+    week2_gpudebug,
+)
+from benches.bench_course_progression import WEEK2_VARIANTS
+from benches.profile_week2_kernels import DEFAULT_CASES
+from benches.week2_gpudebug import KNOWN_CHECKPOINTS
 from .tiny_llm_base import FastRMSNorm, FastRoPE, Qwen3ModelWeek2, swiglu
 from .utils import assert_allclose, tiny_qwen3_mlx_model
 
-implementation_package = FastRMSNorm.__module__.split(".")[0]
-week2_kernels = importlib.import_module(FastRMSNorm.__module__)
-week1_model = importlib.import_module(f"{implementation_package}.qwen3_week1")
-implementation_norm = importlib.import_module(f"{implementation_package}.layer_norm")
-implementation_rope = importlib.import_module(
-    f"{implementation_package}.positional_encoding"
-)
 
-
-def test_week2_fast_operators_are_course_owned():
-    source = inspect.getsource(week2_kernels)
-    assert "mx.fast" not in source
-
-
-def test_fast_rms_norm_matches_week1_implementation():
+def test_task_1_register_cached_rmsnorm_matches_readable_operator():
     x = mx.random.normal((2, 3, 16)).astype(mx.bfloat16)
     weight = mx.random.normal((16,)).astype(mx.bfloat16)
-    expected = RMSNorm(16, weight, eps=1e-5)(x)
     result = FastRMSNorm(16, weight, eps=1e-5)(x)
+    expected = mx.fast.rms_norm(x, weight, 1e-5)
+
+    assert result is not None, "implement the FastRMSNorm learner seam"
+    assert result.shape == expected.shape
+    assert result.dtype == expected.dtype == mx.bfloat16
     assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
 
 
-@pytest.mark.parametrize("offsets", [3, [3, 7]])
-def test_fast_rope_matches_week1_implementation(offsets):
-    batch_size = 1 if isinstance(offsets, int) else len(offsets)
-    seq_len = 4
-    x = mx.random.normal((batch_size, seq_len, 2, 16)).astype(mx.bfloat16)
-    fast = FastRoPE(16, 32, base=10000)
-    readable = RoPE(16, 32, base=10000)
-    readable_offsets = (
-        slice(offsets, offsets + seq_len)
-        if isinstance(offsets, int)
-        else [slice(offset, offset + seq_len) for offset in offsets]
-    )
-    result = fast(x, offsets)
-    expected = readable(x, readable_offsets)
-    assert_allclose(result, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
+def test_task_2_rope_matches_readable_operator():
+    x = mx.random.normal((2, 4, 2, 16)).astype(mx.bfloat16)
+    actual = FastRoPE(16, 32, base=10000)(x, [3, 7])
+    expected = mx.fast.rope(
+        x.transpose(0, 2, 1, 3),
+        16,
+        traditional=False,
+        base=10000,
+        scale=1.0,
+        offset=mx.array([3, 7], dtype=mx.int32),
+    ).transpose(0, 2, 1, 3)
+
+    assert actual is not None, "implement the FastRoPE learner seam"
+    assert actual.shape == expected.shape
+    assert actual.dtype == expected.dtype == mx.bfloat16
+    assert_allclose(actual, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
 
 
-def test_swiglu_matches_readable_expression():
+def test_task_3_swiglu_matches_readable_operator():
     gate = mx.random.normal((2, 4, 16)).astype(mx.bfloat16)
     up = mx.random.normal((2, 4, 16)).astype(mx.bfloat16)
-    assert_allclose(swiglu(gate, up), silu(gate) * up, mx.bfloat16)
+    actual = swiglu(gate, up)
+    expected = gate * mx.sigmoid(gate) * up
+
+    assert actual is not None, "implement the SwiGLU learner seam"
+    assert actual.shape == expected.shape
+    assert actual.dtype == expected.dtype == mx.bfloat16
+    assert_allclose(actual, expected, mx.bfloat16, atol=2e-2, rtol=2e-2)
 
 
-def test_completed_day4_integrates_all_fused_model_kernels():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="swiglu")
-    layer = model.layers_inner[0]
+@pytest.mark.parametrize("seed", (0, 4))
+def test_task_4_primitive_checkpoints_compose_public_model(seed):
+    random_state = mx.random.state[:]
+    try:
+        mx.random.seed(seed)
+        fixture = tiny_qwen3_mlx_model()
+    finally:
+        mx.random.state[:] = random_state
 
-    assert isinstance(model.norm, FastRMSNorm)
-    assert isinstance(layer.input_layernorm, FastRMSNorm)
-    assert isinstance(layer.self_attn.rope, FastRoPE)
-    assert not layer.self_attn.use_decode_attention
-    assert layer.mlp.use_fast_swiglu
+    tokens = mx.array([list(range(1, 11))], dtype=mx.int32)
+    outputs = []
+    for checkpoint in ("simd-matmul", "rmsnorm", "rope", "swiglu"):
+        model = Qwen3ModelWeek2(fixture, checkpoint=checkpoint)
+        output = model(tokens, 0, model.create_kv_cache(capacity=10))
+        mx.eval(output)
+        assert output.dtype == mx.bfloat16
+        assert output.shape[:2] == (1, 10)
+        outputs.append(output)
 
-
-def test_rmsnorm_checkpoint_does_not_enable_later_fast_kernels():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="rmsnorm")
-    layer = model.layers_inner[0]
-
-    assert isinstance(model.norm, FastRMSNorm)
-    assert isinstance(layer.input_layernorm, FastRMSNorm)
-    assert type(layer.self_attn.rope) is implementation_rope.RoPE
-    assert not layer.self_attn.use_decode_attention
-    assert not layer.mlp.use_fast_swiglu
-
-
-def test_rope_checkpoint_does_not_enable_swiglu_early():
-    model = Qwen3ModelWeek2(tiny_qwen3_mlx_model(), checkpoint="rope")
-    layer = model.layers_inner[0]
-
-    assert isinstance(model.norm, FastRMSNorm)
-    assert isinstance(layer.input_layernorm, FastRMSNorm)
-    assert isinstance(layer.self_attn.rope, FastRoPE)
-    assert not layer.self_attn.use_decode_attention
-    assert not layer.mlp.use_fast_swiglu
+    assert all(output.shape == outputs[0].shape for output in outputs)
+    for earlier, later in zip(outputs, outputs[1:]):
+        assert_allclose(
+            later,
+            earlier,
+            mx.bfloat16,
+            atol=0.5,
+            rtol=2e-2,
+            message=f"fixture seed {seed}",
+        )
 
 
-def test_week1_keeps_readable_kernels():
-    hidden_size = 16
-    num_heads = 2
-    num_kv_heads = 1
-    head_dim = 8
-    attention = week1_model.Qwen3MultiHeadAttention(
-        hidden_size,
-        num_heads,
-        num_kv_heads,
-        head_dim,
-        mx.zeros((num_heads * head_dim, hidden_size)),
-        mx.zeros((num_kv_heads * head_dim, hidden_size)),
-        mx.zeros((num_kv_heads * head_dim, hidden_size)),
-        mx.zeros((hidden_size, num_heads * head_dim)),
-        mx.ones((head_dim,)),
-        mx.ones((head_dim,)),
+def test_day4_public_selectors_remain_the_prefix_of_day5():
+    model_module = importlib.import_module(Qwen3ModelWeek2.__module__)
+    checkpoints = (
+        "kv-cache",
+        "capacity-cache",
+        "quantized-matvec",
+        "simd-matmul",
+        "rmsnorm",
+        "rope",
+        "swiglu",
     )
-    assert type(attention.rope) is implementation_rope.RoPE
-    assert type(attention.q_norm) is implementation_norm.RMSNorm
-
-    mlp = week1_model.Qwen3MLP(
-        hidden_size,
-        hidden_size * 2,
-        mx.zeros((hidden_size * 2, hidden_size)),
-        mx.zeros((hidden_size * 2, hidden_size)),
-        mx.zeros((hidden_size, hidden_size * 2)),
+    assert model_module.WEEK2_CHECKPOINTS[:7] == checkpoints
+    assert KNOWN_CHECKPOINTS[:7] == checkpoints
+    assert DEFAULT_CASES[:7] == (
+        "kv-cache:decode:128",
+        "capacity-cache:decode:128",
+        "quantized-matvec:decode:128",
+        "simd-matmul:prefill:128",
+        "rmsnorm:decode:128",
+        "rope:decode:128",
+        "swiglu:decode:128",
     )
-    assert mlp(mx.ones((1, 1, hidden_size))).shape == (1, 1, hidden_size)
+    assert [variant.key for variant in WEEK2_VARIANTS][:8] == [
+        "week1",
+        "week2-kv-cache",
+        "week2-capacity-cache",
+        "week2-quantized-matvec",
+        "week2-simd-matmul",
+        "week2-rmsnorm",
+        "week2-rope",
+        "week2-swiglu",
+    ]
+
+
+def test_day4_model_free_cli_parsers(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "bench",
+            "--solution",
+            "tiny_llm_ref",
+            "--loader",
+            "week2",
+            "--week2-checkpoint",
+            "swiglu",
+            "--model",
+            "qwen3-0.6b",
+            "--prefill-logits",
+            "last",
+        ],
+    )
+    bench_args = bench.parse_args()
+    bench.validate_args(bench_args)
+    assert bench_args.week2_checkpoint == "swiglu"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "progression",
+            "--solution",
+            "ref",
+            "--suite",
+            "week2",
+            "--repeats",
+            "2",
+            "--variant",
+            "week2-rmsnorm",
+            "--variant",
+            "week2-rope",
+            "--variant",
+            "week2-swiglu",
+            "--prefill-logits",
+            "last",
+        ],
+    )
+    assert bench_course_progression.parse_args().variant == [
+        "week2-rmsnorm",
+        "week2-rope",
+        "week2-swiglu",
+    ]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["profile", "--solution", "tiny_llm_ref", "--case", "swiglu:decode:128"],
+    )
+    assert profile_week2_kernels.parse_args().case == [
+        profile_week2_kernels.ProfileCase("swiglu", "decode", 128)
+    ]
+
+    capture = week2_gpudebug.build_parser().parse_args(
+        [
+            "capture",
+            "--solution",
+            "tiny_llm_ref",
+            "--model",
+            "qwen3-0.6b",
+            "--checkpoint",
+            "swiglu",
+            "--phase",
+            "decode",
+            "--tokens",
+            "128",
+            "--trace",
+            "trace.gputrace",
+            "--metadata",
+            "metadata.json",
+            "--manifest",
+            "manifest.json",
+        ]
+    )
+    assert capture.checkpoint == "swiglu"

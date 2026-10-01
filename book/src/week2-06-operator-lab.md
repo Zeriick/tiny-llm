@@ -1,4 +1,15 @@
-# 🚧 Week 2 Day 6 (Optional): Workload-Conditioned Operator Lab
+# Historical Week 2: Bounded Decode-Attention Operator Lab
+
+> **Earlier lesson address.** This page preserves the bounded decode-attention operator lab
+> explanation and its original links. The current Week 2 learner route
+> ships [Day 1: Cache and Measure](./week2-01-kv-cache.md),
+> [Day 2: Keep W4 Packed](./week2-02-quantize-model.md),
+> [Day 3: SIMD Matrix Prefill](./week2-03-simd-matrix-prefill.md),
+> [Day 4: Fused Model Primitives](./week2-04-fused-model-kernels.md), then
+> [Day 5: Tiled Dense Prefill Attention](./week2-05-tiled-prefill-attention.md).
+> Later checkpoints, day numbers, tests, and commands below belong to an
+> earlier all-days course state; do not use them as gates for this checkout.
+
 
 Day 5 restores the matrix-shaped projection path selected by the fixed
 128-token prefill profile. Day 6 asks a different question: can a secondary
@@ -8,6 +19,9 @@ The supplied worked branch is bounded decode attention. It is useful practice
 with online softmax, but the checked fixed workload did not identify attention
 as the next dominant category. Treat this chapter as an optional experiment,
 not a prerequisite for Day 7 and not evidence of a universal bottleneck.
+
+A successful pass ends with a bounded decision, even when the numbers do not
+support keeping the branch.
 
 ## Choose the Workload Before the Operator
 
@@ -30,9 +44,10 @@ duration, or schedule choice.
 
 ## Task 1: Preserve Bounded Decode-Attention Semantics
 
-The readable grouped-attention path materializes score and probability rows.
-For one query row, online softmax can combine the reduction and value-weighted
-sum without storing the full score row:
+Use the supplied branch to make that decision concrete. The readable
+grouped-attention path materializes score and probability rows; for one query
+row, online softmax can combine the reduction and value-weighted sum without
+storing the full score row:
 
 ```plain
 m = -infinity
@@ -59,7 +74,8 @@ short-context experiment into a claim about long-context or paged attention.
 
 ## Task 2: Implement and Verify the Branch
 
-Replace only the existing fail-closed Day 6 learner surfaces. Keep the public
+Implement the smallest complete branch: replace only the existing fail-closed
+Day 6 learner surfaces. Keep the public
 attention interface stable so Week 3 can reuse it.
 
 The supplied C++ surface is `tiny_llm_ext::decode_attention`, implemented by
@@ -69,6 +85,9 @@ The supplied C++ surface is `tiny_llm_ext::decode_attention`, implemented by
 product calls it from `Qwen3MultiHeadAttention.__call__` through
 `decode_attention_custom`. Equivalent internal organization is valid when it
 preserves this public behavior and fallback.
+
+Build as soon as the branch is wired; run the focused check before the product
+path:
 
 ```bash
 pdm run build-ext
@@ -83,11 +102,14 @@ solution may use different helper names and internal organization; it must
 produce the same public attention behavior and preserve the fallback.
 
 If you completed the old Week 2 Day 5 attention exercise before the course was
-reordered, keep that work. Complete the current Day 5 SIMD checkpoint first,
-then use this canonical optional Day 6 chapter and its commands to verify your
-retained attention implementation.
+reordered, keep that work. The current SIMD checkpoint is
+[Day 3](./week2-03-simd-matrix-prefill.md); this historical optional lab and
+its former Day 6 commands are separate from the current learner route.
 
 ## Task 3: Re-measure and Decide
+
+A passing branch establishes correctness. The final decision comes from
+rerunning the same comparison:
 
 Repeat the frozen workload and compare `simd-matmul` with
 `decode-attention`. Record:

@@ -36,13 +36,14 @@ parser.add_argument(
     "--week2-checkpoint",
     choices=(
         "kv-cache",
+        "capacity-cache",
         "quantized-matvec",
+        "simd-matmul",
         "rmsnorm",
         "rope",
         "swiglu",
-        "simd-matmul",
-        "decode-attention",
-        "split-k",
+        "tiled-prefill",
+        "selected",
     ),
     help="run one cumulative Week 2 model checkpoint",
 )
@@ -58,12 +59,16 @@ if (
     and args.device != "gpu"
     and (
         args.loader == "week3"
-        or (args.loader == "week2" and args.week2_checkpoint != "kv-cache")
+        or (
+            args.loader == "week2"
+            and (args.week2_checkpoint or "selected")
+            not in ("kv-cache", "capacity-cache")
+        )
     )
 ):
     parser.error(
-        "The completed Week 2 and Week 3 custom-kernel models are GPU-only; "
-        "use the Week 2 kv-cache checkpoint for the readable pre-kernel path"
+        "Week 3 and the Week 2 packed-weight checkpoints require GPU; "
+        "the Day 1 Week 2 checkpoints use the readable path"
     )
 if args.disable_paged_attention and args.loader != "week3":
     parser.error("--disable-paged-attention requires --loader week3")
