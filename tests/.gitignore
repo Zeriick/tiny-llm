@@ -1,2 +1,4 @@
 test_*.py
 !test_week_2_split_k_kernels.py
+!test_rmsnorm_register_cached.py
+!test_dense_prefill_native.py

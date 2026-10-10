@@ -1,5 +1,22 @@
 # 2026-10-01 上游课程迁移记录
 
+后续更新（2026-10-03）：Day 5 的 BF16 BQ32/BK16 native prefill 已实现并启用。
+使用已有 cooperative-matrix 工具和上游的片段计算结构，遵循本地头文件的 buffer ABI，
+以自然指数 `exp` 表达 online softmax。每个 SIMD group 处理 8 个 query rows；
+FP32 保存运行最大值、分母和输出累加器，PV 矩阵乘法的概率操作数转换为 BF16。
+短 query 仍走 readable fallback。下面的迁移当日待办属于历史记录，不再代表当前完成度。
+本次未进行完整产品 benchmark，不能据此声称速度提升。
+验证：重建学习扩展，Day 5 的 10 项检查与 `tests/test_dense_prefill_native.py`
+的 11 项 native 回归全部通过；本地缓存的 Qwen3-0.6B `selected` 路径完成了
+16-token 离线短生成。新增检查禁止算子偷偷退回 readable compatibility，另检查
+多 batch/GQA、tile 尾部、全屏蔽行、空 tile、在线最大值变化，以及 prefill 后 decode。
+
+后续更新（2026-10-02）：已按每线程缓存 4 个值的约定实现 RMSNorm 缓存路径。
+`dim <= 4096` 时线程数为 `ceil(dim / 4)` 向上对齐 SIMD 宽度；更宽的行保留
+256 线程的 two-pass fallback。支持 float32、float16、BF16，backend 标记更新为
+`course_register_cached_with_wide_fallback`。下面的“留给学习者”记录描述迁移当日状态，
+其中 RMSNorm 已由此次后续实现补齐；尚未做寄存器 spill 分析或性能收益验证。
+
 本次合并目标为 `skyzh/main` 的 `da3e841ce4fb70d341e6e799648cb703ca96a96e`。
 迁移前的全部已跟踪学习代码保存在提交 `f10a8f2`，备份分支为
 `codex/pre-upstream-20261001`。本机忽略的测试副本和当时的工作区补丁另存于

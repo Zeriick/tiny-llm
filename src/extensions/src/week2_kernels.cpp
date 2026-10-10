@@ -234,13 +234,26 @@ void Week2RMSNorm::eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx
 
     out.set_data(mx::allocator::malloc(out.nbytes()));
 
+    const int rows = static_cast<int>(x.size() / x.shape().back());
+    const int dim = static_cast<int>(x.shape().back());
+    // Contract with Metal: each thread retains four strided input values.
+    // Wider rows keep the existing 256-thread, two-pass implementation.
+    constexpr int values_per_thread = 4;
+    const bool register_cached = dim <= 4096;
     auto &device = mx::metal::device(stream().device);
+    const auto kernel_name = register_cached ? "week2_rms_norm_register_cached_" : "week2_rms_norm_";
     auto kernel =
-        device.get_kernel(std::string("week2_rms_norm_") + dtype_suffix(out), device.get_library("tiny_llm_ext"));
+        device.get_kernel(std::string(kernel_name) + dtype_suffix(out), device.get_library("tiny_llm_ext"));
 
-    constexpr int threads_per_threadgroup = 256;
     const auto simd_width = kernel->threadExecutionWidth();
-    if (simd_width == 0 || threads_per_threadgroup % simd_width != 0) {
+    if (simd_width == 0) {
+        throw std::runtime_error("rms_norm: SIMD width must be nonzero");
+    }
+    const size_t needed_threads = (dim + values_per_thread - 1) / values_per_thread;
+    const size_t threads_per_threadgroup = register_cached
+        ? ((needed_threads + simd_width - 1) / simd_width) * simd_width
+        : 256;
+    if (threads_per_threadgroup % simd_width != 0) {
         throw std::runtime_error("rms_norm: threadgroup size must be a multiple of the SIMD width");
     }
     if (threads_per_threadgroup > kernel->maxTotalThreadsPerThreadgroup()) {
@@ -260,8 +273,6 @@ void Week2RMSNorm::eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx
     encoder.set_input_array(weight, 1);
     encoder.set_output_array(out, 2);
 
-    const int rows = static_cast<int>(x.size() / x.shape().back());
-    const int dim = static_cast<int>(x.shape().back());
     encoder.set_bytes(rows, 3);
     encoder.set_bytes(dim, 4);
     encoder.set_bytes(eps_, 5);
@@ -420,19 +431,75 @@ void Week2DecodeAttention::eval_gpu(const std::vector<mx::array> &, std::vector<
     checkpoint_todo("Week2DecodeAttention::eval_gpu", "Week 2, Day 6");
 }
 
-// TODO(learner): implement the new BF16 BQ32/BK16 prefill kernel.
-mx::array _dense_attention_prefill_mma(const mx::array &, const mx::array &, const mx::array &, const mx::array &,
-                                       float, bool, bool, int, int, mx::StreamOrDevice) {
-    checkpoint_todo("_dense_attention_prefill_mma", "Week 2, Day 5");
+// Day 5: validate the flattened native interface once, then build the lazy node.
+mx::array _dense_attention_prefill_mma(
+    const mx::array &q, const mx::array &k, const mx::array &v, const mx::array &mask,
+    float scale, bool is_causal, bool has_mask, int num_heads, int num_kv_heads, mx::StreamOrDevice s) {
+    auto require = [](bool valid, const char *message) {
+        if (!valid) throw std::runtime_error(std::string("dense_prefill: ") + message);
+    };
+    require(num_heads > 0 && num_kv_heads > 0 && num_heads % num_kv_heads == 0, "invalid GQA head counts");
+    require(q.ndim() == 3 && k.ndim() == 3 && v.ndim() == 3, "expected rank-3 q/k/v");
+    require(q.dtype() == mx::bfloat16 && k.dtype() == mx::bfloat16 && v.dtype() == mx::bfloat16,
+            "expected BF16 q/k/v");
+    require(q.shape(2) == 128 && k.shape(2) == 128 && k.shape() == v.shape() &&
+            q.shape(1) >= 9 && k.shape(1) > 0, "expected D=128, L>=9, S>0 and matching K/V");
+    require(q.shape(0) % num_heads == 0 && k.shape(0) % num_kv_heads == 0 &&
+            q.shape(0) / num_heads == k.shape(0) / num_kv_heads, "batch/head layouts disagree");
+    require(!is_causal || k.shape(1) >= q.shape(1), "causal attention requires S>=L");
+    require(q.flags().row_contiguous && k.flags().row_contiguous && v.flags().row_contiguous,
+            "q/k/v must be contiguous");
+    require(!has_mask || (mask.dtype() == mx::float32 && mask.ndim() == 3 &&
+            mask.shape(0) == q.shape(0) && mask.shape(1) == q.shape(1) && mask.shape(2) == k.shape(1) &&
+            mask.flags().row_contiguous), "mask must be contiguous FP32 [B*Hq,L,S]");
+    return mx::array(q.shape(), q.dtype(),
+        std::make_shared<Week2DensePrefillMMA>(to_stream(s), scale, is_causal, has_mask, num_heads, num_kv_heads),
+        {q, k, v, mask});
 }
 
 void Week2DensePrefillMMA::eval_cpu(const std::vector<mx::array> &, std::vector<mx::array> &) {
-    checkpoint_todo("Week2DensePrefillMMA::eval_cpu", "Week 2, Day 5");
+    throw std::runtime_error("dense_prefill: GPU-only primitive");
 }
 
-void Week2DensePrefillMMA::eval_gpu(const std::vector<mx::array> &, std::vector<mx::array> &) {
-    checkpoint_todo("Week2DensePrefillMMA::eval_gpu", "Week 2, Day 5");
+#ifdef _METAL_
+void Week2DensePrefillMMA::eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) {
+    const auto &q = inputs[0];
+    const auto &k = inputs[1];
+    auto &out = outputs[0];
+    out.set_data(mx::allocator::malloc(out.nbytes()));
+    if (out.size() == 0) return;
+
+    // One group owns 32 query rows of one query head, scanning source tiles of 16.
+    constexpr int query_tile = 32;
+    constexpr int threads = 128;
+    auto &device = mx::metal::device(stream().device);
+    auto kernel = device.get_kernel("week2_dense_prefill_mma_bf16_d128", device.get_library("tiny_llm_ext"));
+    if (kernel->threadExecutionWidth() != 32 || kernel->maxTotalThreadsPerThreadgroup() < threads) {
+        throw std::runtime_error("dense_prefill: requires four 32-lane SIMD groups");
+    }
+    auto &encoder = mx::metal::get_command_encoder(stream());
+    encoder.set_compute_pipeline_state(kernel);
+    for (int slot = 0; slot < 4; ++slot) encoder.set_input_array(inputs[slot], slot);
+    encoder.set_output_array(out, 4);
+
+    const int length = q.shape(1), context = k.shape(1);
+    const uint32_t is_causal = is_causal_, has_mask = has_mask_;
+    encoder.set_bytes(length, 5);
+    encoder.set_bytes(context, 6);
+    encoder.set_bytes(scale_, 7);
+    encoder.set_bytes(is_causal, 8);
+    encoder.set_bytes(has_mask, 9);
+    encoder.set_bytes(num_heads_, 10);
+    encoder.set_bytes(num_kv_heads_, 11);
+    // Padded Q/K/V tile storage is declared statically in Metal.
+    encoder.dispatch_threadgroups(MTL::Size((length + query_tile - 1) / query_tile, q.shape(0), 1),
+                                  MTL::Size(threads, 1, 1));
 }
+#else
+void Week2DensePrefillMMA::eval_gpu(const std::vector<mx::array> &, std::vector<mx::array> &) {
+    throw std::runtime_error("dense_prefill: Metal unavailable");
+}
+#endif
 
 
 }  // namespace tiny_llm_ext

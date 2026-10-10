@@ -5,9 +5,8 @@ from .attention import scaled_dot_product_attention_grouped
 
 _NO_ATTENTION_MASK = mx.zeros((1,), dtype=mx.float32)
 DENSE_PREFILL_MIN_QUERY = 9
-# TODO(learner, new Week 2 Day 5): enable after implementing and validating
-# Week2DensePrefillMMA. Until then the model uses our readable GQA implementation.
-DENSE_PREFILL_MMA_IMPLEMENTED = False
+# Native BF16 BQ32/BK16 prefill; unsupported model shapes use readable attention.
+DENSE_PREFILL_MMA_IMPLEMENTED = True
 
 
 class FastRMSNorm:
@@ -15,19 +14,22 @@ class FastRMSNorm:
         self.dim = dim
         self.weight = weight
         self.eps = eps
-        # Existing two-pass kernel is preserved; register caching is still an exercise.
+        # Counts scheduled GPU paths by width, not completed GPU executions.
         self.dispatch_counts = {"register_cached": 0, "fixed_width_fallback": 0}
 
     def __call__(self, x: mx.array) -> mx.array:
         # The C++ primitive requires the input and learned weight to have the
         # same floating-point dtype and expects contiguous buffers for its
         # backend implementation.
-        self.dispatch_counts["fixed_width_fallback"] += 1
-        return tiny_llm_ext.rms_norm(
+        result = tiny_llm_ext.rms_norm(
             mx.contiguous(x),
             mx.contiguous(self.weight.astype(x.dtype)),
             self.eps,
         )
+        if mx.default_device() == mx.gpu:
+            path = "register_cached" if x.shape[-1] <= 4096 else "fixed_width_fallback"
+            self.dispatch_counts[path] += 1
+        return result
 
 
 def normalize_rope_offsets(
@@ -129,7 +131,7 @@ def _prepare_dense_attention_inputs(
     key_batch_size, num_kv_heads, context_length, key_head_dim = key.shape
     if batch_size != key_batch_size or key.shape != value.shape:
         raise ValueError("query, key, and value batch dimensions must match")
-    if head_dim != key_head_dim or num_heads % num_kv_heads != 0:
+    if num_heads <= 0 or num_kv_heads <= 0 or head_dim != key_head_dim or num_heads % num_kv_heads != 0:
         raise ValueError("incompatible grouped-query attention shapes")
     if isinstance(mask, str) and mask != "causal":
         raise ValueError(f"unsupported attention mask: {mask}")
@@ -164,11 +166,7 @@ def dense_prefill_attention_mma(
     scale: float,
     mask: mx.array | str | None = None,
 ) -> mx.array:
-    """Day 5 interface, using readable GQA until the native exercise is complete.
-
-    Passing the public numerical tests here is not proof of a tiled kernel.
-    See DENSE_PREFILL_MMA_IMPLEMENTED and docs/upstream-migration-2026-10-01.md.
-    """
+    """Validate model-facing GQA arrays and run native BF16 tiled prefill."""
     if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
         raise ValueError("dense attention expects [B,H,L,D] query, key, and value")
     expected_shape = query.shape

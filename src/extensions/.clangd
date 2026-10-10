@@ -1,2 +1,13 @@
 CompileFlags:
     CompilationDatabase: build/tiny_llm_ext._ext
+---
+# These are Metal shader sources, not host C++. Stock clangd cannot parse MSL.
+# Keep host C++ diagnostics enabled; use the Metal compiler for shader errors.
+If:
+    PathMatch: [src/.*\.metal, src/cooperative_matrix\.h]
+CompileFlags:
+    Add: [-ferror-limit=0]
+Diagnostics:
+    Suppress: '*'
+Index:
+    Background: Skip

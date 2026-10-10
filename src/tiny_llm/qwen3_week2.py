@@ -379,7 +379,7 @@ class Qwen3ModelWeek2:
         # These describe the executed implementations, not merely requested selectors.
         self.implementation_backends = {
             "kv_cache": "bounded_when_capacity_supplied" if use_bounded_kv_capacity else "concatenating",
-            "rmsnorm": "course_two_pass" if use_fast_rms_norm else "readable",
+            "rmsnorm": "course_register_cached_with_wide_fallback" if use_fast_rms_norm else "readable",
             "prefill_attention": (
                 "course_mma" if DENSE_PREFILL_MMA_IMPLEMENTED else "readable_compatibility"
             ) if use_tiled_prefill_attention else "readable",

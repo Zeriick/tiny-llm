@@ -322,10 +322,92 @@ private:
     int num_heads_;
 };
 
-// Week 2, Day 5: learner exercise, retained as a native TODO.
-mx::array _dense_attention_prefill_mma(const mx::array &q, const mx::array &k, const mx::array &v,
-                                       const mx::array &mask, float scale, bool is_causal, bool has_mask, int num_heads,
-                                       int num_kv_heads, mx::StreamOrDevice s = {});
+///////////////////////////////////////////////////////////////////////////////
+// Week 2, Day 5: tiled dense prefill attention -- implementation contract
+//
+// Implemented by the native entry, GPU primitive, and matching Metal kernel.
+// The public Python adapter owns broadcasting, contiguous copies, and reshaping.
+// The native entry must also validate its inputs before constructing a primitive.
+//
+// 1. Native array layout (batch and head axes have already been flattened):
+//      q:      [B * Hq,  L, 128], contiguous BF16
+//      k, v:   [B * Hkv, S, 128], contiguous BF16, identical shapes
+//      output: [B * Hq,  L, 128], contiguous BF16, same shape as q
+//    Hq = num_heads > 0, Hkv = num_kv_heads > 0, Hq % Hkv == 0.
+//    Require L >= 9, S > 0, and matching B inferred from q and k/v.
+//    For cached causal self-attention require S >= L.
+//    The model handles short queries / other dtypes or head dimensions via its
+//    readable fallback; this direct primitive rejects unsupported inputs.
+//
+// 2. GQA indexing (never replicate K/V to Hq heads):
+//      q_head_flat = b * Hq + h
+//      kv_head_flat = b * Hkv + h / (Hq / Hkv)
+//    Q and output use q_head_flat; K and V use kv_head_flat.
+//
+// 3. Score and mask semantics:
+//      score(i, j) = scale * dot(q[i], k[j]) + additive_mask(i, j)
+//    scale is supplied by the caller; apply it once, before the additive mask.
+//    is_causal: source j is visible iff j <= S - L + i, where i is the query
+//    row within the full L rows, NOT the row within a BQ tile.
+//    has_mask: mask is contiguous FP32 [B * Hq, L, S], already broadcast.
+//    !has_mask: mask is a placeholder array; do not read it or require its shape
+//    to match scores. Both flags false means unmasked attention. If both flags
+//    are true, apply both constraints (Python normally selects one mask mode).
+//
+// 4. GPU ownership and launch contract:
+//    BQ = 32 query rows, BK = 16 source positions, D = 128.
+//    One threadgroup owns one (q_head_flat, query_tile), and iterates over S.
+//    dispatch_threadgroups: grid = (ceil(L / BQ), B * Hq, 1), group = (128,1,1).
+//    Metal group_id.x = query_tile, group_id.y = q_head_flat.
+//    Require SIMD width 32 (four SIMD groups) and kernel thread limit >= 128.
+//    These are 128 cooperating threads, NOT one thread per query row.
+//    Cooperatively stage Q and K/V in threadgroup memory; use SIMD-group matrix
+//    operations for Q @ K^T and weighted V. Synchronize before consuming shared
+//    tiles and before reusing K storage for V or the next source tile.
+//
+// 5. Metal buffer slots (keep eval_gpu and the kernel signature aligned):
+//      0=q, 1=k, 2=v, 3=mask, 4=output
+//      5=L (int32), 6=S (int32), 7=scale (float32)
+//      8=is_causal (uint32), 9=has_mask (uint32)
+//      10=Hq (int32), 11=Hkv (int32)
+//    Convert host bools to uint32 flags when binding; do not depend on bool ABI.
+//    Shared-memory layout/size must agree between host and Metal; it is separate
+//    from these device-buffer slots and must include any tile padding.
+//
+// 6. Online softmax, independently for EACH query row:
+//    Keep FP32 m=-infinity, l=0 and a[D]=0 across source tiles.
+//    For a tile with at least one valid score in this row:
+//      next_m = max(m, max(tile_scores))
+//      alpha = (l == 0) ? 0 : exp(m - next_m)
+//      p[j] = valid(j) ? exp(score[j] - next_m) : 0
+//      l = alpha * l + sum(p)
+//      a = alpha * a + sum_j(p[j] * v[j])
+//      m = next_m
+//    Rescale BOTH the numerator a and denominator l. Skip a row's state update
+//    for tiles with no valid scores; avoid -infinity - (-infinity).
+//    Finally output = (l > 0) ? a / l : 0, with final conversion to BF16.
+//    Do not allocate a full L*S score/probability workspace. A caller-supplied
+//    additive mask can still occupy L*S entries per query head.
+//
+// 7. Tails and execution:
+//    Guard Q/K/V loads and output stores for partial BQ/BK tiles. Padded source
+//    positions contribute zero probability, not score zero. Inactive query rows
+//    must not write output or bypass barriers needed by the rest of the group.
+//    Fully masked rows return finite zeros. eval_cpu reports a GPU-only error.
+//    DENSE_PREFILL_MMA_IMPLEMENTED selects this native path in Python.
+//    Validate native dispatch as well as numerical output in regression checks.
+///////////////////////////////////////////////////////////////////////////////
+mx::array _dense_attention_prefill_mma(
+    const mx::array &q,
+    const mx::array &k,
+    const mx::array &v,
+    const mx::array &mask,
+    float scale,
+    bool is_causal,
+    bool has_mask,
+    int num_heads,
+    int num_kv_heads,
+    mx::StreamOrDevice s = {});
 
 class Week2DensePrefillMMA : public mx::Primitive {
 public:
@@ -336,6 +418,8 @@ public:
           has_mask_(has_mask),
           num_heads_(num_heads),
           num_kv_heads_(num_kv_heads) {}
+    // Primitive inputs = {q, k, v, mask}; outputs = {output}.
+    // eval_gpu allocates output and follows the launch/buffer contract above.
     void eval_cpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) override;
     void eval_gpu(const std::vector<mx::array> &inputs, std::vector<mx::array> &outputs) override;
     std::pair<std::vector<mx::array>, std::vector<int>> vmap(const std::vector<mx::array> &,

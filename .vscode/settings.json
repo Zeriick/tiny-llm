@@ -5,5 +5,8 @@
         "--compile-commands-dir=${workspaceFolder}/src/extensions/build/tiny_llm_ext._ext",
         "--header-insertion=never"
     ],
-    "clangd.path": "clangd"
+    "clangd.path": "clangd",
+    "files.associations": {
+        "**/src/cooperative_matrix.h": "metal"
+    }
 }
